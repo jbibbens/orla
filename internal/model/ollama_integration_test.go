@@ -130,7 +130,6 @@ func TestOllamaProvider_Chat_WithTools_Integration(t *testing.T) {
 	require.Len(t, response.ToolCalls, 1)
 	assert.Equal(t, "get_temperature", response.ToolCalls[0].McpCallToolParams.Name)
 	assert.Equal(t, map[string]any{"city": "Boston"}, response.ToolCalls[0].McpCallToolParams.Arguments)
-
 }
 
 func TestOllamaProvider_Chat_Streaming_Integration(t *testing.T) {

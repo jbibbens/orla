@@ -186,17 +186,33 @@ run_ollama_service() {
     status "ollama is not running. starting ollama service..."
     if [ "$platform" = "brew" ]; then
         if brew services start ollama; then
-            success "ollama service started successfully :-)"
+            :
         else
             warning "failed to start ollama service. start it manually with: brew services start ollama"
+            return 1
         fi
     else
         if systemctl --user start ollama 2>/dev/null || systemctl start ollama 2>/dev/null; then
-            success "ollama service started successfully :-)"
+            :
         else
             warning "failed to start ollama service. start it manually with: systemctl --user start ollama"
+            return 1
         fi
     fi
+
+    # Wait for the API to be ready (service start returns before the server is listening)
+    status "waiting for ollama API to be ready..."
+    max_attempts=60
+    attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+            success "ollama service started successfully :-)"
+            return 0
+        fi
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+    warning "ollama service started but API did not become ready in ${max_attempts}s. you may need to run 'orla agent ...' again in a moment."
 }
 
 run_ollama_service_on_macos() {
