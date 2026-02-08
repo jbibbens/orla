@@ -10,6 +10,8 @@ agentic_serving:
       backend:
         type: "openai"
         endpoint: "http://vllm:8000"
+        # Local vLLM does not validate keys; set api_key_env_var and pass any value (e.g. dummy) in the Orla container.
+        api_key_env_var: "VLLM_API_KEY"
       model: "openai:Qwen/Qwen3-4B-Instruct-2507"
       context:
         shared: false

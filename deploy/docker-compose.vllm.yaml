@@ -31,6 +31,9 @@ services:
     command: ["daemon", "--config", "/config/orla.yaml"]
     ports:
       - "8081:8081"
+    environment:
+      # Local vLLM does not validate; any non-empty value satisfies Orla's API-key check.
+      - VLLM_API_KEY=dummy
     volumes:
       - ./orla-vllm.yaml:/config/orla.yaml:ro
     depends_on:
