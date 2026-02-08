@@ -44,11 +44,20 @@ func (e *WorkflowExecutor) GetWorkflow(name string) (*config.Workflow, error) {
 	return workflow, nil
 }
 
-// StartWorkflow initializes a workflow execution
+// StartWorkflow initializes a workflow execution.
+// If the workflow is defined as a graph, it is compiled to a linear task list first.
 func (e *WorkflowExecutor) StartWorkflow(ctx context.Context, workflowName string) (*WorkflowExecution, error) {
 	workflow, err := e.GetWorkflow(workflowName)
 	if err != nil {
 		return nil, err
+	}
+
+	tasks, err := config.CompileWorkflowTasks(workflow)
+	if err != nil {
+		return nil, fmt.Errorf("workflow '%s': %w", workflowName, err)
+	}
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("workflow '%s': compiled to zero tasks", workflowName)
 	}
 
 	// Generate a unique execution ID using UUID
@@ -58,7 +67,7 @@ func (e *WorkflowExecutor) StartWorkflow(ctx context.Context, workflowName strin
 		ExecutionID:      executionID,
 		WorkflowName:     workflowName,
 		CurrentTaskIndex: 0,
-		Tasks:            workflow.Tasks,
+		Tasks:            tasks,
 		State:            WorkflowExecutionStatePending,
 		Context:          make([]model.Message, 0),
 	}
@@ -70,7 +79,7 @@ func (e *WorkflowExecutor) StartWorkflow(ctx context.Context, workflowName strin
 	zap.L().Debug("Started workflow execution",
 		zap.String("workflow_name", workflowName),
 		zap.String("execution_id", executionID),
-		zap.Int("task_count", len(workflow.Tasks)))
+		zap.Int("task_count", len(tasks)))
 
 	return execution, nil
 }

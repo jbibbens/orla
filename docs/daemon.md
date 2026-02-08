@@ -112,7 +112,9 @@ agentic_serving:
 
 ### Workflows
 
-A workflow is an ordered list of tasks. Each task specifies an agent profile and can override the LLM server or prompt:
+A workflow can be defined either as alinear list of tasks or as a graph. Each task (or node) specifies an agent profile and can override the LLM server or prompt.
+
+#### Linear workflows
 
 ```yaml
 agentic_serving:
@@ -133,8 +135,36 @@ agentic_serving:
         - agent_profile: "synthesis_agent"
 ```
 
+#### Graph workflows
+
+You can define a workflow as a graph with `nodes` and `edges`. Reserved node ids in edges: `__start__` (entry) and `__end__` (exit). Right now only **linear chains** are supported (one path from start to end), so execution order is the same as a `tasks` list. The graph form gives you **named nodes** (e.g. `writer`, `critic`) instead of indices, an **explicit flow** (edges) that’s easy to read and to visualize, and a **schema that’s ready** for future extensions (e.g. conditional edges or branching). If you don’t care about those, use `tasks`; it’s equivalent for linear workflows.
+
+```yaml
+agentic_serving:
+  workflows:
+    - name: "writer_then_critic"
+      graph:
+        nodes:
+          - id: "writer"
+            agent_profile: "writer_agent"
+            use_context: true
+          - id: "critic"
+            agent_profile: "critic_agent"
+            prompt: "Review and suggest improvements."
+            use_context: true
+        edges:
+          - from: "__start__"
+            to: "writer"
+          - from: "writer"
+            to: "critic"
+          - from: "critic"
+            to: "__end__"
+```
+
+You must use explicit `__start__` and `__end__` in the edges; implicit entry or exit (e.g. a node with no incoming or outgoing edges) is not allowed.
+
 - **agent_profile** (Required): Must match an `agent_profiles[].name`.
-- **llm_server** (Optional): override for this task.
+- **llm_server** (Optional): override for this task/node.
 - **prompt** (Optional): fixed prompt for this task; if empty, the client supplies the prompt (e.g. accumulated story so far).
 - **use_context** (Optional): If true, the task receives accumulated context from previous tasks (and when using shared-context LLM servers, the daemon can sync context across agents).
 

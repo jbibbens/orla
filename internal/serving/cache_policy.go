@@ -56,14 +56,6 @@ func (e *CachePolicyEvaluator) EvaluateDecision(serverName string, turnSize int,
 		// Always flush (regardless of other conditions)
 		return true, nil
 
-	case config.CachePolicyPreserveOnSmallTurns:
-		// Flush if turn size exceeds threshold
-		threshold := policy.SmallTurnThreshold
-		if threshold <= 0 {
-			threshold = 100 // Default threshold
-		}
-		return turnSize > threshold, nil
-
 	case config.CachePolicyFlushUnderPressure:
 		// Flush if memory pressure exceeds threshold
 		threshold := policy.MemoryPressureThreshold

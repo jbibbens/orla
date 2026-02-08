@@ -130,8 +130,6 @@ type WorkflowTask struct {
 	AgentProfile string `json:"agent_profile"`
 	// LLMServer is an optional override for the LLM server configuration
 	LLMServer string `json:"llm_server,omitempty"`
-	// Turn is the turn number for multi-agent coordination (1-based)
-	Turn int `json:"turn,omitempty"`
 	// Prompt is the prompt or prompt template for this task
 	Prompt string `json:"prompt,omitempty"`
 	// UseContext indicates whether to use previous task outputs as context

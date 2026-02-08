@@ -89,6 +89,38 @@ func TestWorkflowExecutor_StartWorkflow_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+func TestWorkflowExecutor_StartWorkflow_GraphDefined(t *testing.T) {
+	workflows := []*config.Workflow{
+		{
+			Name: "graph-workflow",
+			Graph: &config.WorkflowGraph{
+				Nodes: []*config.WorkflowNode{
+					{ID: "writer", AgentProfile: "profile1", UseContext: true},
+					{ID: "critic", AgentProfile: "profile2", Prompt: "Review."},
+				},
+				Edges: []*config.WorkflowEdge{
+					{From: "__start__", To: "writer"},
+					{From: "writer", To: "critic"},
+					{From: "critic", To: "__end__"},
+				},
+			},
+		},
+	}
+	executor := NewWorkflowExecutor(workflows)
+
+	ctx := context.Background()
+	execution, err := executor.StartWorkflow(ctx, "graph-workflow")
+	require.NoError(t, err)
+	require.NotNil(t, execution)
+
+	assert.Len(t, execution.Tasks, 2)
+	assert.Equal(t, "profile1", execution.Tasks[0].AgentProfile)
+	assert.True(t, execution.Tasks[0].UseContext)
+	assert.Equal(t, "profile2", execution.Tasks[1].AgentProfile)
+	assert.Equal(t, "Review.", execution.Tasks[1].Prompt)
+	assert.Equal(t, 0, execution.CurrentTaskIndex)
+}
+
 func TestWorkflowExecutor_StartWorkflow_UniqueExecutionIDs(t *testing.T) {
 	workflows := []*config.Workflow{
 		{

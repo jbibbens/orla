@@ -103,57 +103,6 @@ func TestCachePolicyEvaluator_EvaluateDecision_AggressiveFlush(t *testing.T) {
 	assert.True(t, shouldFlush)
 }
 
-func TestCachePolicyEvaluator_EvaluateDecision_PreserveOnSmallTurns(t *testing.T) {
-	servers := []*config.LLMServerConfig{
-		{
-			Name: "server1",
-			Cache: &config.CacheConfig{
-				Policy:             config.CachePolicyPreserveOnSmallTurns,
-				SmallTurnThreshold: 100,
-			},
-		},
-	}
-	evaluator := NewCachePolicyEvaluator(servers)
-
-	// Small turn should preserve
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 50, 0.5, false, "", "")
-	require.NoError(t, err)
-	assert.False(t, shouldFlush)
-
-	// Large turn should flush
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 150, 0.5, false, "", "")
-	require.NoError(t, err)
-	assert.True(t, shouldFlush)
-
-	// Exactly at threshold should flush
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 100, 0.5, false, "", "")
-	require.NoError(t, err)
-	assert.False(t, shouldFlush) // threshold is exclusive
-}
-
-func TestCachePolicyEvaluator_EvaluateDecision_PreserveOnSmallTurns_DefaultThreshold(t *testing.T) {
-	servers := []*config.LLMServerConfig{
-		{
-			Name: "server1",
-			Cache: &config.CacheConfig{
-				Policy: config.CachePolicyPreserveOnSmallTurns,
-				// No threshold set, should use default 100
-			},
-		},
-	}
-	evaluator := NewCachePolicyEvaluator(servers)
-
-	// Small turn should preserve
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 50, 0.5, false, "", "")
-	require.NoError(t, err)
-	assert.False(t, shouldFlush)
-
-	// Large turn should flush
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 150, 0.5, false, "", "")
-	require.NoError(t, err)
-	assert.True(t, shouldFlush)
-}
-
 func TestCachePolicyEvaluator_EvaluateDecision_FlushUnderPressure(t *testing.T) {
 	servers := []*config.LLMServerConfig{
 		{

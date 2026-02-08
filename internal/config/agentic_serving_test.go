@@ -287,7 +287,7 @@ func TestValidateAgenticServingConfig_DuplicateWorkflowName(t *testing.T) {
 	assert.Contains(t, err.Error(), "duplicate workflow name")
 }
 
-func TestValidateAgenticServingConfig_WorkflowNoTasks(t *testing.T) {
+func TestValidateAgenticServingConfig_WorkflowNoTasksOrGraph(t *testing.T) {
 	cfg := &AgenticServingConfig{
 		LLMServers: []*LLMServerConfig{
 			{
@@ -305,14 +305,45 @@ func TestValidateAgenticServingConfig_WorkflowNoTasks(t *testing.T) {
 		Workflows: []*Workflow{
 			{
 				Name:  "test-workflow",
-				Tasks: []*WorkflowTask{}, // Empty tasks
+				Tasks: []*WorkflowTask{}, // Empty tasks, no graph
 			},
 		},
 	}
 
 	err := validateAgenticServingConfig(cfg)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "must have at least one task")
+	assert.Contains(t, err.Error(), "must have either 'tasks' or 'graph'")
+}
+
+func TestValidateAgenticServingConfig_WorkflowTasksAndGraphMutuallyExclusive(t *testing.T) {
+	cfg := &AgenticServingConfig{
+		LLMServers: []*LLMServerConfig{
+			{
+				Name:    "test-server",
+				Backend: &core.LLMBackend{Type: core.LLMInferenceAPITypeOllama, Endpoint: "http://localhost:8080"},
+				Model:   "test-model",
+			},
+		},
+		AgentProfiles: []*AgentProfile{
+			{Name: "test-profile", LLMServer: "test-server"},
+		},
+		Workflows: []*Workflow{
+			{
+				Name: "both",
+				Tasks: []*WorkflowTask{{AgentProfile: "test-profile"}},
+				Graph: &WorkflowGraph{
+					Nodes: []*WorkflowNode{{ID: "n1", AgentProfile: "test-profile"}},
+					Edges: []*WorkflowEdge{
+						{From: "__start__", To: "n1"},
+						{From: "n1", To: "__end__"},
+					},
+				},
+			},
+		},
+	}
+	err := validateAgenticServingConfig(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot have both 'tasks' and 'graph'")
 }
 
 func TestValidateAgenticServingConfig_WorkflowTaskEmptyAgentProfile(t *testing.T) {
@@ -530,9 +561,9 @@ func TestValidateCacheConfig_InvalidPolicy(t *testing.T) {
 func TestValidateCacheConfig_ValidPolicies(t *testing.T) {
 	validPolicies := []CachePolicyType{
 		CachePolicyPreserve,
-		CachePolicyPreserveOnSmallTurns,
 		CachePolicyFlushUnderPressure,
 		CachePolicyAggressiveFlush,
+		CachePolicyPreserveWithinWorkflow,
 	}
 
 	for _, policy := range validPolicies {
@@ -543,27 +574,6 @@ func TestValidateCacheConfig_ValidPolicies(t *testing.T) {
 		err := validateCacheConfig(cache)
 		assert.NoError(t, err, "Policy %s should be valid", policy)
 	}
-}
-
-func TestValidateCacheConfig_PreserveOnSmallTurns_InvalidThreshold(t *testing.T) {
-	cache := &CacheConfig{
-		Policy:            CachePolicyPreserveOnSmallTurns,
-		SmallTurnThreshold: -1, // Invalid
-	}
-
-	err := validateCacheConfig(cache)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "small_turn_threshold must be non-negative")
-}
-
-func TestValidateCacheConfig_PreserveOnSmallTurns_Valid(t *testing.T) {
-	cache := &CacheConfig{
-		Policy:            CachePolicyPreserveOnSmallTurns,
-		SmallTurnThreshold: 100,
-	}
-
-	err := validateCacheConfig(cache)
-	assert.NoError(t, err)
 }
 
 func TestValidateCacheConfig_FlushUnderPressure_InvalidThreshold(t *testing.T) {
@@ -718,7 +728,6 @@ func TestValidateAgenticServingConfig_CompleteValidConfig(t *testing.T) {
 					{
 						AgentProfile: "test-profile",
 						LLMServer:    "test-server",
-						Turn:         1,
 						Prompt:       "test prompt",
 						UseContext:   true,
 					},
@@ -729,4 +738,173 @@ func TestValidateAgenticServingConfig_CompleteValidConfig(t *testing.T) {
 
 	err := validateAgenticServingConfig(cfg)
 	require.NoError(t, err)
+}
+
+func TestValidateAgenticServingConfig_WorkflowWithGraph_Valid(t *testing.T) {
+	cfg := &AgenticServingConfig{
+		LLMServers: []*LLMServerConfig{
+			{
+				Name:    "test-server",
+				Backend: &core.LLMBackend{Type: core.LLMInferenceAPITypeOllama, Endpoint: "http://localhost:8080"},
+				Model:   "test-model",
+			},
+		},
+		AgentProfiles: []*AgentProfile{
+			{Name: "writer", LLMServer: "test-server"},
+			{Name: "critic", LLMServer: "test-server"},
+		},
+		Workflows: []*Workflow{
+			{
+				Name: "graph-workflow",
+				Graph: &WorkflowGraph{
+					Nodes: []*WorkflowNode{
+						{ID: "writer", AgentProfile: "writer", UseContext: true},
+						{ID: "critic", AgentProfile: "critic", Prompt: "Review.", UseContext: true},
+					},
+					Edges: []*WorkflowEdge{
+						{From: "__start__", To: "writer"},
+						{From: "writer", To: "critic"},
+						{From: "critic", To: "__end__"},
+					},
+				},
+			},
+		},
+	}
+	err := validateAgenticServingConfig(cfg)
+	require.NoError(t, err)
+}
+
+func TestValidateAgenticServingConfig_WorkflowGraph_NoEdges(t *testing.T) {
+	cfg := &AgenticServingConfig{
+		LLMServers: []*LLMServerConfig{
+			{
+				Name:    "test-server",
+				Backend: &core.LLMBackend{Type: core.LLMInferenceAPITypeOllama, Endpoint: "http://localhost:8080"},
+				Model:   "test-model",
+			},
+		},
+		AgentProfiles: []*AgentProfile{{Name: "p", LLMServer: "test-server"}},
+		Workflows: []*Workflow{
+			{
+				Name: "w",
+				Graph: &WorkflowGraph{
+					Nodes: []*WorkflowNode{{ID: "n1", AgentProfile: "p"}},
+					Edges: []*WorkflowEdge{},
+				},
+			},
+		},
+	}
+	err := validateAgenticServingConfig(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one edge")
+}
+
+func TestCompileWorkflowTasks_Tasks(t *testing.T) {
+	w := &Workflow{
+		Name: "linear",
+		Tasks: []*WorkflowTask{
+			{AgentProfile: "a"},
+			{AgentProfile: "b", Prompt: "second"},
+		},
+	}
+	tasks, err := CompileWorkflowTasks(w)
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+	assert.Equal(t, "a", tasks[0].AgentProfile)
+	assert.Equal(t, "b", tasks[1].AgentProfile)
+	assert.Equal(t, "second", tasks[1].Prompt)
+}
+
+func TestCompileWorkflowTasks_Graph(t *testing.T) {
+	w := &Workflow{
+		Name: "graph",
+		Graph: &WorkflowGraph{
+			Nodes: []*WorkflowNode{
+				{ID: "first", AgentProfile: "p1", UseContext: true},
+				{ID: "second", AgentProfile: "p2", Prompt: "review"},
+			},
+			Edges: []*WorkflowEdge{
+				{From: "__start__", To: "first"},
+				{From: "first", To: "second"},
+				{From: "second", To: "__end__"},
+			},
+		},
+	}
+	tasks, err := CompileWorkflowTasks(w)
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+	assert.Equal(t, "p1", tasks[0].AgentProfile)
+	assert.True(t, tasks[0].UseContext)
+	assert.Equal(t, "p2", tasks[1].AgentProfile)
+	assert.Equal(t, "review", tasks[1].Prompt)
+}
+
+func TestValidateAgenticServingConfig_WorkflowGraph_RequiresExplicitStart(t *testing.T) {
+	// No __start__ edge: must be rejected
+	cfg := &AgenticServingConfig{
+		LLMServers: []*LLMServerConfig{
+			{
+				Name:    "test-server",
+				Backend: &core.LLMBackend{Type: core.LLMInferenceAPITypeOllama, Endpoint: "http://localhost:8080"},
+				Model:   "test-model",
+			},
+		},
+		AgentProfiles: []*AgentProfile{
+			{Name: "p1", LLMServer: "test-server"},
+			{Name: "p2", LLMServer: "test-server"},
+		},
+		Workflows: []*Workflow{
+			{
+				Name: "w",
+				Graph: &WorkflowGraph{
+					Nodes: []*WorkflowNode{
+						{ID: "a", AgentProfile: "p1"},
+						{ID: "b", AgentProfile: "p2"},
+					},
+					Edges: []*WorkflowEdge{
+						{From: "a", To: "b"}, // no __start__ or __end__
+					},
+				},
+			},
+		},
+	}
+	err := validateAgenticServingConfig(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "__start__")
+}
+
+func TestValidateAgenticServingConfig_WorkflowGraph_RequiresExplicitEnd(t *testing.T) {
+	// No edge to __end__: last node has no outgoing edge
+	cfg := &AgenticServingConfig{
+		LLMServers: []*LLMServerConfig{
+			{
+				Name:    "test-server",
+				Backend: &core.LLMBackend{Type: core.LLMInferenceAPITypeOllama, Endpoint: "http://localhost:8080"},
+				Model:   "test-model",
+			},
+		},
+		AgentProfiles: []*AgentProfile{
+			{Name: "p1", LLMServer: "test-server"},
+			{Name: "p2", LLMServer: "test-server"},
+		},
+		Workflows: []*Workflow{
+			{
+				Name: "w",
+				Graph: &WorkflowGraph{
+					Nodes: []*WorkflowNode{
+						{ID: "a", AgentProfile: "p1"},
+						{ID: "b", AgentProfile: "p2"},
+					},
+					Edges: []*WorkflowEdge{
+						{From: "__start__", To: "a"},
+						{From: "a", To: "b"},
+						// b has no outgoing edge to __end__
+					},
+				},
+			},
+		},
+	}
+	err := validateAgenticServingConfig(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "__end__")
 }

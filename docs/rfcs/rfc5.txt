@@ -281,18 +281,14 @@ Table of Contents
             tasks:
               - agent_profile: "story_agent_a"
                 llm_server: "sglang_shared"  # Optional override
-                turn: 1
               
               - agent_profile: "story_agent_b"
                 llm_server: "sglang_shared"
-                turn: 2
               
-              # Repeat pattern for alternating turns
+              # ... more tasks (e.g. alternating agents)
               - agent_profile: "story_agent_a"
-                turn: 3
               
               - agent_profile: "story_agent_b"
-                turn: 4
           
           - name: "routing_then_synthesis"
             tasks:

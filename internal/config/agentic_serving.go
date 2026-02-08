@@ -8,6 +8,11 @@ import (
 	"github.com/dorcha-inc/orla/internal/core"
 )
 
+const (
+	WorkflowGraphStartNodeID = "__start__"
+	WorkflowGraphEndNodeID   = "__end__"
+)
+
 // AgenticServingMode represents the operational mode of the Agentic Serving Layer
 type AgenticServingMode string
 
@@ -24,8 +29,6 @@ type CachePolicyType string
 const (
 	// CachePolicyPreserve always preserves cache (unless flush_after_final modifier is set)
 	CachePolicyPreserve CachePolicyType = "preserve"
-	// CachePolicyPreserveOnSmallTurns preserves cache when context delta is small
-	CachePolicyPreserveOnSmallTurns CachePolicyType = "preserve_on_small_turns"
 	// CachePolicyFlushUnderPressure flushes cache when memory pressure exceeds threshold
 	CachePolicyFlushUnderPressure CachePolicyType = "flush_under_pressure"
 	// CachePolicyAggressiveFlush always flushes cache after each request
@@ -81,8 +84,6 @@ type ContextConfig struct {
 type CacheConfig struct {
 	// Policy is the cache policy type
 	Policy CachePolicyType `yaml:"policy" mapstructure:"policy"`
-	// SmallTurnThreshold is the token threshold for small turns (for preserve_on_small_turns policy)
-	SmallTurnThreshold int `yaml:"small_turn_threshold,omitempty" mapstructure:"small_turn_threshold"`
 	// FlushUnderPressure indicates whether to flush under memory pressure
 	FlushUnderPressure bool `yaml:"flush_under_pressure,omitempty" mapstructure:"flush_under_pressure"`
 	// MemoryPressureThreshold is the memory pressure threshold (0.0-1.0) for flush_under_pressure policy
@@ -119,12 +120,45 @@ type ToolsConfig struct {
 	Allowed []string `yaml:"allowed,omitempty" mapstructure:"allowed"`
 }
 
-// Workflow represents a workflow configuration
+// Workflow represents a workflow configuration.
+// Exactly one of tasks (linear list) or graph (nodes and edges) must be set; both cannot be set at once.
 type Workflow struct {
 	// Name is a unique identifier for this workflow
 	Name string `yaml:"name" mapstructure:"name"`
-	// Tasks is a sequence of workflow tasks
-	Tasks []*WorkflowTask `yaml:"tasks" mapstructure:"tasks"`
+	// Tasks is a linear sequence of workflow tasks (use when graph is not set)
+	Tasks []*WorkflowTask `yaml:"tasks,omitempty" mapstructure:"tasks"`
+	// Graph defines the workflow as nodes and edges (use when tasks is not set)
+	Graph *WorkflowGraph `yaml:"graph,omitempty" mapstructure:"graph"`
+}
+
+// WorkflowGraph defines a workflow as a graph of nodes and edges.
+// Reserved node ids: __start__ (entry), __end__ (exit). Execution follows a single path;
+// for now only linear chains are supported (one path from start to end).
+type WorkflowGraph struct {
+	// Nodes are the workflow steps\ i.e the agent invocations, keyed by id in the slice order or by ID field
+	Nodes []*WorkflowNode `yaml:"nodes" mapstructure:"nodes"`
+	// Edges define the flow: from -> to (node ids, or __start__ / __end__)
+	Edges []*WorkflowEdge `yaml:"edges" mapstructure:"edges"`
+}
+
+// WorkflowNode is a single node in a workflow graph (one agent step).
+type WorkflowNode struct {
+	// ID is the unique node id (required). Use __start__ and __end__ only as edge endpoints, not as node ids.
+	ID string `yaml:"id" mapstructure:"id"`
+	// AgentProfile is the name of the agent profile to use
+	AgentProfile string `yaml:"agent_profile" mapstructure:"agent_profile"`
+	// LLMServer is an optional override for the LLM server
+	LLMServer string `yaml:"llm_server,omitempty" mapstructure:"llm_server"`
+	// Prompt is the prompt or template for this task
+	Prompt string `yaml:"prompt,omitempty" mapstructure:"prompt"`
+	// UseContext indicates whether to use previous task outputs as context
+	UseContext bool `yaml:"use_context,omitempty" mapstructure:"use_context"`
+}
+
+// WorkflowEdge connects two nodes (from -> to). Use __start__ as from for entry, __end__ as to for exit.
+type WorkflowEdge struct {
+	From string `yaml:"from" mapstructure:"from"`
+	To   string `yaml:"to" mapstructure:"to"`
 }
 
 // WorkflowTask represents a single task in a workflow
@@ -134,8 +168,6 @@ type WorkflowTask struct {
 	// LLMServer is an optional override for the LLM server configuration
 	// If not set, uses the LLM server from the agent profile
 	LLMServer string `yaml:"llm_server,omitempty" mapstructure:"llm_server"`
-	// Turn is the turn number for multi-agent coordination (1-based)
-	Turn int `yaml:"turn,omitempty" mapstructure:"turn"`
 	// Prompt is the prompt or prompt template for this task
 	// If empty, uses the workflow's initial prompt
 	Prompt string `yaml:"prompt,omitempty" mapstructure:"prompt"`
@@ -211,10 +243,23 @@ func validateAgenticServingConfig(cfg *AgenticServingConfig) error {
 		}
 		workflowNames[workflow.Name] = true
 
-		// Validate workflow tasks
-		if len(workflow.Tasks) == 0 {
-			return fmt.Errorf("workflow '%s': must have at least one task", workflow.Name)
+		// Validate workflow: exactly one of tasks or graph
+		hasTasks := len(workflow.Tasks) > 0
+		hasGraph := workflow.Graph != nil && len(workflow.Graph.Nodes) > 0
+		if !hasTasks && !hasGraph {
+			return fmt.Errorf("workflow '%s': must have either 'tasks' or 'graph' with at least one node", workflow.Name)
 		}
+		if hasTasks && hasGraph {
+			return fmt.Errorf("workflow '%s': cannot have both 'tasks' and 'graph'; set exactly one", workflow.Name)
+		}
+		if hasGraph {
+			if err := validateWorkflowGraph(workflow.Name, workflow.Graph, agentProfileNames, llmServerNames); err != nil {
+				return fmt.Errorf("error validating workflow '%s' graph: %w", workflow.Name, err)
+			}
+			continue
+		}
+
+		// If we have reached this point, we have tasks and no graph
 		for i, task := range workflow.Tasks {
 			if task.AgentProfile == "" {
 				return fmt.Errorf("workflow '%s' task %d: agent_profile cannot be empty", workflow.Name, i+1)
@@ -222,7 +267,7 @@ func validateAgenticServingConfig(cfg *AgenticServingConfig) error {
 			if !agentProfileNames[task.AgentProfile] {
 				return fmt.Errorf("workflow '%s' task %d: references unknown agent_profile '%s'", workflow.Name, i+1, task.AgentProfile)
 			}
-			// Validate optional LLM server override
+			// Validate LLM server override if present
 			if task.LLMServer != "" && !llmServerNames[task.LLMServer] {
 				return fmt.Errorf("workflow '%s' task %d: references unknown llm_server '%s'", workflow.Name, i+1, task.LLMServer)
 			}
@@ -267,23 +312,18 @@ func validateLLMServerConfig(server *LLMServerConfig) error {
 // validateCacheConfig validates a cache configuration
 func validateCacheConfig(cache *CacheConfig) error {
 	validPolicies := map[CachePolicyType]struct{}{
-		CachePolicyPreserve:              {},
-		CachePolicyPreserveOnSmallTurns:  {},
-		CachePolicyFlushUnderPressure:    {},
-		CachePolicyAggressiveFlush:       {},
+		CachePolicyPreserve:               {},
+		CachePolicyFlushUnderPressure:     {},
+		CachePolicyAggressiveFlush:        {},
 		CachePolicyPreserveWithinWorkflow: {},
 	}
 
 	if _, ok := validPolicies[cache.Policy]; !ok {
-		return fmt.Errorf("cache policy must be one of: preserve, preserve_on_small_turns, flush_under_pressure, aggressive_flush, got '%s'", cache.Policy)
+		return fmt.Errorf("cache policy must be one of: preserve, flush_under_pressure, aggressive_flush, preserve_within_workflow, got '%s'", cache.Policy)
 	}
 
 	// Validate policy-specific parameters
 	switch cache.Policy {
-	case CachePolicyPreserveOnSmallTurns:
-		if cache.SmallTurnThreshold < 0 {
-			return fmt.Errorf("small_turn_threshold must be non-negative")
-		}
 	case CachePolicyFlushUnderPressure:
 		if cache.MemoryPressureThreshold < 0 || cache.MemoryPressureThreshold > 1 {
 			return fmt.Errorf("memory_pressure_threshold must be between 0.0 and 1.0, got %f", cache.MemoryPressureThreshold)
@@ -305,4 +345,123 @@ func validateInferenceConfig(inference *InferenceConfig) error {
 		return fmt.Errorf("max_tokens must be at least 1, got %d", *inference.MaxTokens)
 	}
 	return nil
+}
+
+// validateWorkflowGraph validates a workflow graph (node ids, agent refs, edges, linear path).
+func validateWorkflowGraph(workflowName string, g *WorkflowGraph, agentProfileNames, llmServerNames map[string]bool) error {
+	nodeIds := make(map[string]bool)
+	for i, n := range g.Nodes {
+		if n.ID == "" {
+			return fmt.Errorf("workflow '%s' graph node %d: id cannot be empty", workflowName, i+1)
+		}
+		if n.ID == WorkflowGraphStartNodeID || n.ID == WorkflowGraphEndNodeID {
+			return fmt.Errorf("workflow '%s' graph node %d: id cannot be reserved %s or %s", workflowName, i+1, WorkflowGraphStartNodeID, WorkflowGraphEndNodeID)
+		}
+		if nodeIds[n.ID] {
+			return fmt.Errorf("workflow '%s' graph: duplicate node id '%s'", workflowName, n.ID)
+		}
+		nodeIds[n.ID] = true
+		if n.AgentProfile == "" {
+			return fmt.Errorf("workflow '%s' graph node '%s': agent_profile cannot be empty", workflowName, n.ID)
+		}
+		if !agentProfileNames[n.AgentProfile] {
+			return fmt.Errorf("workflow '%s' graph node '%s': references unknown agent_profile '%s'", workflowName, n.ID, n.AgentProfile)
+		}
+		if n.LLMServer != "" && !llmServerNames[n.LLMServer] {
+			return fmt.Errorf("workflow '%s' graph node '%s': references unknown llm_server '%s'", workflowName, n.ID, n.LLMServer)
+		}
+	}
+	if len(g.Edges) == 0 {
+		return fmt.Errorf("workflow '%s' graph: must have at least one edge", workflowName)
+	}
+	outEdges := make(map[string][]string)
+	for _, e := range g.Edges {
+		fromOk := e.From == WorkflowGraphStartNodeID || nodeIds[e.From]
+		toOk := e.To == WorkflowGraphEndNodeID || nodeIds[e.To]
+		if !fromOk || !toOk {
+			return fmt.Errorf("workflow '%s' graph edge %s -> %s: from and to must be %s/%s or defined node ids", workflowName, e.From, e.To, WorkflowGraphStartNodeID, WorkflowGraphEndNodeID)
+		}
+		outEdges[e.From] = append(outEdges[e.From], e.To)
+	}
+	// Require explicit __start__ and __end__: no implicit entry or exit
+	if nexts := outEdges[WorkflowGraphStartNodeID]; len(nexts) != 1 {
+		return fmt.Errorf("workflow '%s' graph: must have exactly one edge from %s to the first node", workflowName, WorkflowGraphStartNodeID)
+	}
+	start := outEdges[WorkflowGraphStartNodeID][0]
+
+	visited := make(map[string]bool)
+	cur := start
+	for cur != "" && cur != WorkflowGraphEndNodeID && !visited[cur] {
+		visited[cur] = true
+		nexts := outEdges[cur]
+		if len(nexts) > 1 {
+			return fmt.Errorf("workflow '%s' graph: node '%s' has multiple outgoing edges (only linear chains supported)", workflowName, cur)
+		}
+		if len(nexts) == 0 {
+			return fmt.Errorf("workflow '%s' graph: must have an edge from the last node to %s (node '%s' has no outgoing edge)", workflowName, WorkflowGraphEndNodeID, cur)
+		}
+		cur = nexts[0]
+	}
+	if cur != WorkflowGraphEndNodeID {
+		return fmt.Errorf("workflow '%s' graph: path must end at %s", workflowName, WorkflowGraphEndNodeID)
+	}
+	for id := range nodeIds {
+		if !visited[id] {
+			return fmt.Errorf("workflow '%s' graph: node '%s' is not reachable from %s", workflowName, id, WorkflowGraphStartNodeID)
+		}
+	}
+	return nil
+}
+
+// CompileWorkflowTasks returns the task list for a workflow.
+// If the workflow has a graph, it is compiled to a linear task list (execution order).
+// Otherwise the workflow's tasks slice is returned.
+func CompileWorkflowTasks(w *Workflow) ([]*WorkflowTask, error) {
+	if w.Graph != nil && len(w.Graph.Nodes) > 0 {
+		return compileGraphToTasks(w.Graph)
+	}
+	return w.Tasks, nil
+}
+
+// compileGraphToTasks returns the task list in execution order for a linear graph.
+// Requires explicit __start__ and __end__ (validated by validateWorkflowGraph).
+func compileGraphToTasks(g *WorkflowGraph) ([]*WorkflowTask, error) {
+	nodeByID := make(map[string]*WorkflowNode)
+	for _, n := range g.Nodes {
+		nodeByID[n.ID] = n
+	}
+	outEdges := make(map[string][]string)
+	for _, e := range g.Edges {
+		outEdges[e.From] = append(outEdges[e.From], e.To)
+	}
+	startNexts := outEdges[WorkflowGraphStartNodeID]
+	if len(startNexts) != 1 {
+		return nil, fmt.Errorf("workflow graph: must have exactly one edge from %s to the first node", WorkflowGraphStartNodeID)
+	}
+	start := startNexts[0]
+
+	var order []string
+	cur := start
+	for cur != "" && cur != WorkflowGraphEndNodeID {
+		order = append(order, cur)
+		nexts := outEdges[cur]
+		if len(nexts) == 0 {
+			return nil, fmt.Errorf("workflow graph: must have an edge from the last node to %s", WorkflowGraphEndNodeID)
+		}
+		cur = nexts[0]
+	}
+	tasks := make([]*WorkflowTask, 0, len(order))
+	for _, id := range order {
+		n := nodeByID[id]
+		if n == nil {
+			continue
+		}
+		tasks = append(tasks, &WorkflowTask{
+			AgentProfile: n.AgentProfile,
+			LLMServer:    n.LLMServer,
+			Prompt:       n.Prompt,
+			UseContext:   n.UseContext,
+		})
+	}
+	return tasks, nil
 }
