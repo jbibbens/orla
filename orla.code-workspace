@@ -4,19 +4,16 @@
 			"path": "."
 		},
 		{
-			"path": "../orla-registry"
-		},
-		{
 			"path": "../orla-tool-coinflip"
-		},
-		{
-			"path": "../orla-tool-fs"
 		},
 		{
 			"path": "../orla-paper"
 		},
 		{
 			"path": "../harvard-agentic-system"
+		},
+		{
+			"path": "../orlaserver.github.io"
 		}
 	],
 	"settings": {
