@@ -1,0 +1,27 @@
+# Orla agentic daemon config for use with docker-compose.sglang.yaml.
+# SGLang exposes an OpenAI-compatible API; use type "sglang" and the model name you serve.
+
+agentic_serving:
+  mode: daemon
+  daemon:
+    listen_address: "0.0.0.0:8081"
+  llm_servers:
+    - name: "sglang"
+      backend:
+        type: "sglang"
+        endpoint: "http://sglang:30000"
+      model: "sglang:Qwen/Qwen3-8B"
+      context:
+        shared: false
+      cache:
+        policy: "preserve"
+  agent_profiles:
+    - name: "default"
+      llm_server: "sglang"
+      inference:
+        temperature: 0.7
+        max_tokens: 1024
+  workflows:
+    - name: "single_agent"
+      tasks:
+        - agent_profile: "default"

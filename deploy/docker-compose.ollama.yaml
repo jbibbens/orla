@@ -1,0 +1,38 @@
+# Orla agentic daemon + Ollama. Run: docker compose -f deploy/docker-compose.ollama.yaml up -d
+# Daemon API: http://localhost:8081. Pull a model first: docker compose exec ollama ollama pull llama3.2:3b
+# Then edit deploy/orla-ollama.yaml to set agentic_serving.llm_servers[0].model to match (e.g. ollama:llama3.2:3b).
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: orla-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # Optional: use GPU (uncomment on Linux with nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  orla:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: orla-daemon-ollama
+    command: ["daemon", "--config", "/config/orla.yaml"]
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./orla-ollama.yaml:/config/orla.yaml:ro
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+volumes:
+  ollama_data: {}

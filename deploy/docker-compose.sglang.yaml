@@ -1,0 +1,51 @@
+# Orla agentic daemon + SGLang. Run: docker compose -f deploy/docker-compose.sglang.yaml up -d
+# Requires GPU. Default model: Qwen/Qwen3-8B. Daemon API: http://localhost:8081.
+# Edit deploy/orla-sglang.yaml so agentic_serving.llm_servers[0].model matches the model SGLang serves.
+
+services:
+  sglang:
+    image: lmsysorg/sglang:latest
+    container_name: orla-sglang
+    ports:
+      - "30000:30000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - sglang_cache:/root/.cache/huggingface
+    entrypoint: ["python3", "-m", "sglang.launch_server"]
+    command:
+      - "--model-path"
+      - "${SGLANG_MODEL:-Qwen/Qwen3-8B}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "30000"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  orla:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: orla-daemon-sglang
+    command: ["daemon", "--config", "/config/orla.yaml"]
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./orla-sglang.yaml:/config/orla.yaml:ro
+    depends_on:
+      - sglang
+    restart: unless-stopped
+
+volumes:
+  sglang_cache: {}

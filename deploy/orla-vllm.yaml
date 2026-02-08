@@ -1,0 +1,27 @@
+# Orla agentic daemon config for use with docker-compose.vllm.yaml.
+# vLLM exposes an OpenAI-compatible API; use type "openai" and the model name you serve.
+
+agentic_serving:
+  mode: daemon
+  daemon:
+    listen_address: "0.0.0.0:8081"
+  llm_servers:
+    - name: "vllm"
+      backend:
+        type: "openai"
+        endpoint: "http://vllm:8000"
+      model: "openai:Qwen/Qwen3-4B-Instruct-2507"
+      context:
+        shared: false
+      cache:
+        policy: "preserve"
+  agent_profiles:
+    - name: "default"
+      llm_server: "vllm"
+      inference:
+        temperature: 0.7
+        max_tokens: 1024
+  workflows:
+    - name: "single_agent"
+      tasks:
+        - agent_profile: "default"
