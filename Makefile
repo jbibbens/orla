@@ -50,12 +50,6 @@ build: ## Build the orla binaries
 	mkdir -p $(BUILD_DIR)
 	go build -ldflags "-X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)" \
 		-o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/orla
-	go build -ldflags "-X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME)-test ./cmd/orla-test
-
-.PHONY: install-test
-install-test: ## Install the orla-test binary
-	go install -ldflags "-X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)" ./cmd/orla-test
 
 .PHONY: install
 install: ## Install the orla binary

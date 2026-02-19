@@ -1,8 +1,6 @@
-package state
+package tools
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/dorcha-inc/orla/internal/core"
@@ -169,82 +167,10 @@ func TestToolsRegistry_ListTools(t *testing.T) {
 	assert.Equal(t, tool3, toolMap["tool3"])
 }
 
-// TestNewToolsRegistryFromDirectory tests creating a registry from a directory
-func TestNewToolsRegistryFromDirectory(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create test files with different shebangs
-	testFiles := map[string]string{
-		"python-tool.py": "#!/usr/bin/python3\nprint('hello')",
-		"bash-tool.sh":   "#!/bin/bash\necho hello",
-		"binary-tool":    "\x00\x01\x02\x03", // Binary content
-	}
-
-	for filename, content := range testFiles {
-		filePath := filepath.Join(tmpDir, filename)
-		// #nosec G306 -- test file permissions are acceptable for temporary test files
-		err := os.WriteFile(filePath, []byte(content), 0755)
-		require.NoError(t, err)
-	}
-
-	registry, err := NewToolsRegistryFromDirectory(tmpDir)
-	require.NoError(t, err)
-	require.NotNil(t, registry)
-
-	// Verify tools were discovered
-	tools := registry.ListTools()
-	assert.GreaterOrEqual(t, len(tools), 2) // At least python-tool and bash-tool
-
-	// Verify we can retrieve specific tools
-	pythonTool, err := registry.GetTool("python-tool")
-	require.NoError(t, err)
-	assert.Equal(t, "python-tool", pythonTool.Name)
-	assert.Contains(t, pythonTool.Interpreter, "python")
-
-	bashTool, err := registry.GetTool("bash-tool")
-	require.NoError(t, err)
-	assert.Equal(t, "bash-tool", bashTool.Name)
-	assert.Contains(t, bashTool.Interpreter, "bash")
-}
-
-// TestNewToolsRegistryFromDirectory_EmptyDirectory tests creating a registry from an empty directory
-func TestNewToolsRegistryFromDirectory_EmptyDirectory(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	registry, err := NewToolsRegistryFromDirectory(tmpDir)
-	require.NoError(t, err)
-	require.NotNil(t, registry)
-
-	tools := registry.ListTools()
-	assert.Equal(t, 0, len(tools))
-}
-
-// TestNewToolsRegistryFromDirectory_NonexistentDirectory tests creating a registry from a non-existent directory
-// It should return an empty registry, not an error, to allow graceful degradation
-func TestNewToolsRegistryFromDirectory_NonexistentDirectory(t *testing.T) {
-	registry, err := NewToolsRegistryFromDirectory("/nonexistent/directory")
-	require.NoError(t, err, "Should not return error for non-existent directory (graceful degradation)")
-	assert.NotNil(t, registry, "Should return a registry")
-	assert.Empty(t, registry.ListTools(), "Should have no tools when directory doesn't exist")
-}
-
 // TestDuplicateToolNameError_Error tests the error message formatting
 func TestDuplicateToolNameError_Error(t *testing.T) {
 	err := NewDuplicateToolNameError("test-tool")
 	require.NotNil(t, err)
 	assert.Equal(t, "test-tool", err.Name)
 	assert.Equal(t, "tool with name test-tool already exists", err.Error())
-}
-
-// TestNewToolsRegistryFromDirectory_NotADirectory tests error when path is not a directory
-func TestNewToolsRegistryFromDirectory_NotADirectory(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "notadir")
-	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0644))
-
-	registry, err := NewToolsRegistryFromDirectory(filePath)
-	assert.Error(t, err)
-	assert.Nil(t, registry)
-	assert.Contains(t, err.Error(), "not a directory")
 }

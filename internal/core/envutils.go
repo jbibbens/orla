@@ -1,9 +1,6 @@
 package core
 
-import (
-	"os"
-	"runtime"
-)
+import "os"
 
 // GetEnv retrieves an environment variable, checking both the standard name
 // and an ORLA-prefixed version. Returns the first non-empty value found.
@@ -15,8 +12,4 @@ func GetEnv(key string) string {
 	}
 	// Check ORLA-prefixed version
 	return os.Getenv("ORLA_" + key)
-}
-
-func IsLocalMachine() bool {
-	return runtime.GOOS == GOOSDarwin
 }

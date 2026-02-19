@@ -1,5 +1,5 @@
-// Package state provides tools discovery, registration, and management.
-package state
+// Package tools provides tools discovery, registration, and management.
+package tools
 
 import (
 	"fmt"
@@ -24,8 +24,23 @@ func NewToolNotFoundError(name string) *ToolNotFoundError {
 }
 
 // Interface guard for ToolNotFoundError
-// This ensures that ToolNotFoundError implements the error interface.
 var _ error = &ToolNotFoundError{}
+
+// DuplicateToolNameError is returned when a tool with the same name already exists.
+type DuplicateToolNameError struct {
+	Name string `json:"name"`
+}
+
+func (e *DuplicateToolNameError) Error() string {
+	return fmt.Sprintf("tool with name %s already exists", e.Name)
+}
+
+// NewDuplicateToolNameError creates a DuplicateToolNameError.
+func NewDuplicateToolNameError(name string) *DuplicateToolNameError {
+	return &DuplicateToolNameError{Name: name}
+}
+
+var _ error = (*DuplicateToolNameError)(nil)
 
 // ToolsRegistry maintains a registry of tools and their entries.
 type ToolsRegistry struct {
@@ -37,15 +52,6 @@ func NewToolsRegistry() *ToolsRegistry {
 	return &ToolsRegistry{
 		Tools: make(map[string]*core.ToolManifest),
 	}
-}
-
-// NewToolsRegistryFromDirectory creates a new tools registry from a directory
-func NewToolsRegistryFromDirectory(dir string) (*ToolsRegistry, error) {
-	tools, err := ScanToolsFromDirectory(dir)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolsRegistry{Tools: tools}, nil
 }
 
 // AddTool adds a tool to the registry

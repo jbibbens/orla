@@ -2,19 +2,13 @@ package agent
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
-	"github.com/dorcha-inc/orla/internal/server"
-	"github.com/dorcha-inc/orla/internal/state"
+	"github.com/dorcha-inc/orla/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,95 +38,106 @@ func TestClient_ListTools_NilSession(t *testing.T) {
 	assert.Nil(t, tools)
 }
 
-func TestClient_ListTools_Success(t *testing.T) {
-	ctx := t.Context()
+func TestInProcessToolClient_ListTools_Empty(t *testing.T) {
+	ctx := context.Background()
+	registry := tools.NewToolsRegistry()
+	executor := core.NewOrlaToolExecutor(30)
+	client := NewInProcessToolClient(registry, executor)
 
-	// Create a test server configuration with a tools directory
-	tmpDir := t.TempDir()
-	toolsDir := filepath.Join(tmpDir, "tools")
-	// #nosec G301 -- test directory permissions are acceptable for temporary test files
-	err := os.MkdirAll(toolsDir, 0755)
-	require.NoError(t, err)
-
-	// Create a test tool so the registry isn't empty
-	toolPath := filepath.Join(toolsDir, "test-tool.sh")
-	toolContent := "#!/bin/sh\necho hello world\n"
-
-	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(toolPath, []byte(toolContent), 0755)
-	require.NoError(t, err)
-
-	// Create tools registry
-	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
-	require.NoError(t, err)
-
-	cfg := &config.OrlaConfig{
-		ToolsDir:      toolsDir,
-		ToolsRegistry: registry,
-		Port:          0, // Use 0 to get a random port
-		Timeout:       30,
-		LogFormat:     "json",
-		LogLevel:      "info",
-	}
-
-	// Create and start the test server
-	srv := server.NewOrlaServer(cfg, "")
-	require.NotNil(t, srv)
-
-	// Find an available port
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	require.True(t, ok)
-	port := addr.Port
-	require.NoError(t, listener.Close())
-
-	// Start server in a goroutine
-	serverCtx, serverCancel := context.WithCancel(context.Background())
-	defer serverCancel()
-
-	serverErrCh := make(chan error, 1)
-	go func() {
-		serverErrCh <- srv.Serve(serverCtx, fmt.Sprintf("localhost:%d", port))
-	}()
-
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
-
-	// Create MCP client with HTTP transport
-	mcpClient := mcp.NewClient(&mcp.Implementation{
-		Name:    "orla-agent",
-		Version: "1.0.0",
-	}, nil)
-
-	transport := &mcp.StreamableClientTransport{
-		Endpoint: fmt.Sprintf("http://%s/mcp", addr),
-		HTTPClient: &http.Client{
-			Timeout: 5 * time.Second,
-		},
-	}
-
-	// Connect to the test server
-	session, connectErr := mcpClient.Connect(ctx, transport, nil)
-	require.NoError(t, connectErr)
-	defer core.LogDeferredError(session.Close)
-
-	// Create client and test ListTools
-	client := &Client{McpSession: session}
 	tools, err := client.ListTools(ctx)
-	require.NoError(t, err, "ListTools should succeed with a valid session")
-	assert.NotNil(t, tools, "Tools should not be nil")
-	assert.IsType(t, []*mcp.Tool{}, tools, "Tools should be a slice of *mcp.Tool")
+	require.NoError(t, err)
+	assert.NotNil(t, tools)
+	assert.Len(t, tools, 0)
+}
 
-	// Cleanup
-	serverCancel()
-	// Wait for server to shut down (ignore errors as server may have already shut down)
-	select {
-	case <-serverErrCh:
-		// Server shut down
-	case <-time.After(1 * time.Second):
-		// Timeout waiting for server shutdown
+func TestInProcessToolClient_ListTools_ReturnsConfiguredTools(t *testing.T) {
+	ctx := context.Background()
+	registry := tools.NewToolsRegistry()
+	// Add a tool manifest (path not required for ListTools)
+	require.NoError(t, registry.AddTool(&core.ToolManifest{
+		Name:        "echo-tool",
+		Description: "Echoes input",
+		Path:        "/bin/echo",
+	}))
+	executor := core.NewOrlaToolExecutor(30)
+	client := NewInProcessToolClient(registry, executor)
+
+	tools, err := client.ListTools(ctx)
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+	assert.Equal(t, "echo-tool", tools[0].Name)
+	assert.Equal(t, "Echoes input", tools[0].Description)
+}
+
+func TestInProcessToolClient_CallTool_NotFound(t *testing.T) {
+	ctx := context.Background()
+	registry := tools.NewToolsRegistry()
+	executor := core.NewOrlaToolExecutor(30)
+	client := NewInProcessToolClient(registry, executor)
+
+	result, err := client.CallTool(ctx, &mcp.CallToolParams{Name: "nonexistent", Arguments: nil})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.Content[0].(*mcp.TextContent).Text, "tool not found")
+}
+
+func TestInProcessToolClient_CallTool_Success(t *testing.T) {
+	ctx := context.Background()
+	registry := tools.NewToolsRegistry()
+	// Use a real executable for execution test
+	echoPath := "/bin/echo"
+	if _, err := os.Stat(echoPath); err != nil {
+		t.Skip("echo not available on this system")
 	}
+	require.NoError(t, registry.AddTool(&core.ToolManifest{
+		Name:        "echo-tool",
+		Description: "Echo",
+		Path:        echoPath,
+	}))
+	executor := core.NewOrlaToolExecutor(30)
+	client := NewInProcessToolClient(registry, executor)
+
+	result, err := client.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "echo-tool",
+		Arguments: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Equal(t, "\n", textContent.Text) // echo with no args outputs newline
+}
+
+func TestInProcessToolClient_CallTool_WithArgs(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "script.sh")
+	// #nosec G306 -- test script
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hello\n"), 0755))
+	registry := tools.NewToolsRegistry()
+	require.NoError(t, registry.AddTool(&core.ToolManifest{
+		Name:        "script-tool",
+		Description: "Test script",
+		Path:        scriptPath,
+		Interpreter: "/bin/sh",
+	}))
+	executor := core.NewOrlaToolExecutor(30)
+	client := NewInProcessToolClient(registry, executor)
+
+	result, err := client.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "script-tool",
+		Arguments: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, textContent.Text, "hello")
 }
 
 func TestClient_CallTool_NilSession(t *testing.T) {
@@ -209,99 +214,4 @@ func TestClient_Close_WithSessionError(t *testing.T) {
 	err := client.Close()
 	// Should not error when both are nil
 	assert.NoError(t, err)
-}
-
-func TestClient_CallTool_Success(t *testing.T) {
-	ctx := t.Context()
-
-	// Create a test server configuration with a tools directory
-	tmpDir := t.TempDir()
-	toolsDir := filepath.Join(tmpDir, "tools")
-	// #nosec G301 -- test directory permissions are acceptable for temporary test files
-	err := os.MkdirAll(toolsDir, 0755)
-	require.NoError(t, err)
-
-	// Create a test tool so the registry isn't empty
-	toolPath := filepath.Join(toolsDir, "test-tool.sh")
-	toolContent := "#!/bin/sh\necho hello world\n"
-
-	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(toolPath, []byte(toolContent), 0755)
-	require.NoError(t, err)
-
-	// Create tools registry
-	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
-	require.NoError(t, err)
-
-	cfg := &config.OrlaConfig{
-		ToolsDir:      toolsDir,
-		ToolsRegistry: registry,
-		Port:          0, // Use 0 to get a random port
-		Timeout:       30,
-		LogFormat:     "json",
-		LogLevel:      "info",
-	}
-
-	// Create and start the test server
-	srv := server.NewOrlaServer(cfg, "")
-	require.NotNil(t, srv)
-
-	// Find an available port
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	require.True(t, ok)
-	port := addr.Port
-	require.NoError(t, listener.Close())
-
-	// Start server in a goroutine
-	serverCtx, serverCancel := context.WithCancel(context.Background())
-	defer serverCancel()
-
-	serverErrCh := make(chan error, 1)
-	go func() {
-		serverErrCh <- srv.Serve(serverCtx, fmt.Sprintf("localhost:%d", port))
-	}()
-
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
-
-	// Create MCP client with HTTP transport
-	mcpClient := mcp.NewClient(&mcp.Implementation{
-		Name:    "orla-agent",
-		Version: "1.0.0",
-	}, nil)
-
-	transport := &mcp.StreamableClientTransport{
-		Endpoint: fmt.Sprintf("http://%s/mcp", addr),
-		HTTPClient: &http.Client{
-			Timeout: 5 * time.Second,
-		},
-	}
-
-	// Connect to the test server
-	session, connectErr := mcpClient.Connect(ctx, transport, nil)
-	require.NoError(t, connectErr)
-	defer core.LogDeferredError(session.Close)
-
-	// Create client and test CallTool
-	client := &Client{McpSession: session}
-	params := &mcp.CallToolParams{
-		Name:      "test-tool",
-		Arguments: map[string]any{},
-	}
-	result, err := client.CallTool(ctx, params)
-	// Since we created a simple test tool, it should succeed
-	require.NoError(t, err, "CallTool should succeed with a valid session and test tool")
-	assert.NotNil(t, result, "CallTool result should not be nil")
-
-	// Cleanup
-	serverCancel()
-	// Wait for server to shut down (ignore errors as server may have already shut down)
-	select {
-	case <-serverErrCh:
-		// Server shut down
-	case <-time.After(1 * time.Second):
-		// Timeout waiting for server shutdown
-	}
 }

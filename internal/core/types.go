@@ -5,10 +5,8 @@ package core
 type RuntimeMode string
 
 const (
-	// RuntimeModeSimple executes on-demand per request
+	// RuntimeModeSimple executes on-demand per request (only supported mode)
 	RuntimeModeSimple RuntimeMode = "simple"
-	// RuntimeModeCapsule executes as a long-running process with lifecycle management
-	RuntimeModeCapsule RuntimeMode = "capsule"
 )
 
 // HotLoadMode represents the reload strategy for hot-load
@@ -32,7 +30,7 @@ type HotLoadConfig struct {
 
 // RuntimeConfig represents RFC 3 compliant runtime configuration
 type RuntimeConfig struct {
-	// Mode is the runtime mode. Currently only "simple" and "capsule" are supported
+	// Mode is the runtime mode (only "simple" is supported)
 	Mode RuntimeMode `yaml:"mode,omitempty"`
 	// StartupTimeoutMs is the maximum time Orla will wait for the startup handshake in milliseconds
 	StartupTimeoutMs int `yaml:"startup_timeout_ms,omitempty"`

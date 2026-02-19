@@ -2,7 +2,6 @@ package core
 
 import (
 	"os"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -51,15 +50,4 @@ func TestGetEnv_NotSet(t *testing.T) {
 
 	result := GetEnv(key)
 	assert.Empty(t, result)
-}
-
-func TestIsLocalMachine(t *testing.T) {
-	// This test depends on the actual runtime environment
-	// On macOS, it should return true; on other platforms, false
-	result := IsLocalMachine()
-	if runtime.GOOS == "darwin" {
-		assert.True(t, result)
-	} else {
-		assert.False(t, result)
-	}
 }

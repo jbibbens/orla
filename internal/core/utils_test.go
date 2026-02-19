@@ -1,35 +1,10 @@
 package core
 
 import (
-	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-func TestMustFprintf_Success(t *testing.T) {
-	var buf bytes.Buffer
-	format := "Hello %s"
-	arg := "World"
-
-	MustFprintf(&buf, format, arg)
-
-	expected := fmt.Sprintf(format, arg)
-	assert.Equal(t, expected, buf.String())
-}
-
-func TestMustFprintf_WithMultipleArgs(t *testing.T) {
-	var buf bytes.Buffer
-	format := "Count: %d, Name: %s"
-	count := 42
-	name := "test"
-
-	MustFprintf(&buf, format, count, name)
-
-	expected := fmt.Sprintf(format, count, name)
-	assert.Equal(t, expected, buf.String())
-}
 
 func TestJoinMapKeys_StringKeys(t *testing.T) {
 	m := map[string]struct{}{

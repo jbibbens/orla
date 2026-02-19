@@ -26,7 +26,7 @@ type Loop struct {
 	cfg      *config.OrlaConfig
 }
 
-// NewLoop creates a new agent loop
+// NewLoop creates a new agent loop. client may be nil for no-tools (one-shot) mode.
 func NewLoop(client MCPClient, provider model.Provider, cfg *config.OrlaConfig) *Loop {
 	return &Loop{
 		client:   client,
@@ -55,10 +55,14 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 		return nil, fmt.Errorf("stream handler is required when streaming is enabled")
 	}
 
-	// Get available tools from the MCP server
-	tools, err := l.client.ListTools(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list tools: %w", err)
+	// Get available tools (none if no MCP client)
+	var tools []*mcp.Tool
+	if l.client != nil {
+		var err error
+		tools, err = l.client.ListTools(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list tools: %w", err)
+		}
 	}
 
 	zap.L().Debug("Agent loop starting",
@@ -207,6 +211,16 @@ func (l *Loop) executeToolCalls(ctx context.Context, toolCalls []model.ToolCallW
 
 	toolResults := make([]model.ToolResultWithID, 0, len(toolCalls))
 	for _, toolCall := range toolCalls {
+		if l.client == nil {
+			toolResults = append(toolResults, model.ToolResultWithID{
+				ID: toolCall.ID,
+				McpCallToolResult: mcp.CallToolResult{
+					IsError: true,
+					Content: []mcp.Content{&mcp.TextContent{Text: "tools not available"}},
+				},
+			})
+			continue
+		}
 		// Execute tool call via MCP
 		result, err := l.client.CallTool(ctx, &toolCall.McpCallToolParams)
 		if err != nil {

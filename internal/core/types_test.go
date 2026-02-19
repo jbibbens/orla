@@ -8,7 +8,6 @@ import (
 
 func TestRuntimeMode_String(t *testing.T) {
 	assert.Equal(t, "simple", string(RuntimeModeSimple))
-	assert.Equal(t, "capsule", string(RuntimeModeCapsule))
 }
 
 func TestHotLoadMode_String(t *testing.T) {
@@ -51,7 +50,7 @@ func TestRuntimeConfig_Empty(t *testing.T) {
 
 func TestRuntimeConfig_WithValues(t *testing.T) {
 	config := &RuntimeConfig{
-		Mode:             RuntimeModeCapsule,
+		Mode:             RuntimeModeSimple,
 		StartupTimeoutMs: 5000,
 		HotLoad: &HotLoadConfig{
 			Mode: HotLoadModeRestart,
@@ -60,7 +59,7 @@ func TestRuntimeConfig_WithValues(t *testing.T) {
 		Args: []string{"--flag", "value"},
 	}
 
-	assert.Equal(t, RuntimeModeCapsule, config.Mode)
+	assert.Equal(t, RuntimeModeSimple, config.Mode)
 	assert.Equal(t, 5000, config.StartupTimeoutMs)
 	assert.NotNil(t, config.HotLoad)
 	assert.Len(t, config.Env, 1)

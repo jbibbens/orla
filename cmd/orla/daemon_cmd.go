@@ -15,48 +15,37 @@ import (
 	"go.uber.org/zap"
 )
 
-// newDaemonCmd creates the daemon command for the Agentic Serving Layer
-func newDaemonCmd() *cobra.Command {
+// newServeCmd creates the serve command that runs the agent engine as a service
+func newServeCmd() *cobra.Command {
 	var configPath string
-	var listenAddress string
+	var listenAddr string
 	var prettyLog bool
 
 	cmd := &cobra.Command{
-		Use:   "daemon",
-		Short: "Start the Agentic Serving Layer daemon (RFC 5)",
-		Long: `Start the Agentic Serving Layer daemon that manages inference backends,
-KV cache policies, and multi-agent coordination.
-
-The daemon runs as a long-lived process and provides an HTTP API for agents to connect.
-Agents can use the daemon to execute workflows, share context, and manage cache policies.`,
+		Use:   "serve",
+		Short: "Start orla's agent engine as a service",
+		Long:  `Start orla's agent engine as a service. The server runs as a long-lived process. Use "orla agent" for one-shot agent runs.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Load configuration
-			cfg, err := config.LoadConfig(configPath)
-			if err != nil {
-				return fmt.Errorf("failed to load config: %w", err)
+			cfg, loadConfigErr := config.LoadConfig(configPath)
+			if loadConfigErr != nil {
+				zap.L().Fatal("Failed to load config", zap.Error(loadConfigErr))
 			}
 
 			// Resolve logging format: CLI flag wins; otherwise config
 			resolvedPrettyLog := resolveLogFormat(cfg, prettyLog)
 
-			// Initialize logger
-			if err := core.Init(resolvedPrettyLog); err != nil {
-				return fmt.Errorf("failed to initialize logger: %w", err)
+			coreInitErr := core.InitLogger(resolvedPrettyLog)
+			if coreInitErr != nil {
+				zap.L().Fatal("Failed to initialize logger", zap.Error(coreInitErr))
 			}
 
-			// Check if agentic serving configuration exists
-			if cfg.AgenticServing == nil {
-				return fmt.Errorf("agentic_serving configuration is required")
+			listenAddress := "localhost:8081"
+			if listenAddr != "" {
+				listenAddress = listenAddr
 			}
 
-			listenAddress := "localhost:8081" // Default
-
-			if cfg.AgenticServing.Daemon != nil && cfg.AgenticServing.Daemon.ListenAddress != "" {
-				listenAddress = cfg.AgenticServing.Daemon.ListenAddress
-			}
-
-			// Create serving layer
-			servingLayer, err := serving.NewLayer(cfg.AgenticServing)
+			// Create serving layer with empty config; configure via API/code (programmatic interface)
+			servingLayer, err := serving.NewLayer(&config.AgenticServingConfig{})
 			if err != nil {
 				return fmt.Errorf("failed to create serving layer: %w", err)
 			}
@@ -98,8 +87,16 @@ Agents can use the daemon to execute workflows, share context, and manage cache 
 	}
 
 	cmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to config file (default: uses precedence)")
-	cmd.Flags().StringVarP(&listenAddress, "listen-address", "l", "", "Address to listen on (default: from config or localhost:8081)")
+	cmd.Flags().StringVarP(&listenAddr, "listen-address", "l", "", "Address to listen on (default: from config or localhost:8081)")
 	cmd.Flags().BoolVar(&prettyLog, "pretty", false, "Use pretty-printed logs instead of JSON")
 
 	return cmd
+}
+
+// resolveLogFormat determines the log format based on CLI flag and config
+func resolveLogFormat(cfg *config.OrlaConfig, prettyLog bool) bool {
+	if !prettyLog && cfg.LogFormat == "pretty" {
+		return true
+	}
+	return prettyLog
 }

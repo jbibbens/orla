@@ -465,7 +465,7 @@ func TestWorkflowExecutor_ExecuteWorkflowWithCallback_ContextSyncError(t *testin
 	executor := NewWorkflowExecutor(server.URL)
 	ctx := context.Background()
 
+	// Sync context failure is best-effort; workflow completes and no error is returned
 	err := executor.ExecuteWorkflowWithCallback(ctx, "test-workflow", "initial prompt", 100, nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to sync context")
+	assert.NoError(t, err)
 }

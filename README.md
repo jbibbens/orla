@@ -19,22 +19,17 @@
   <img src="share/main.gif" alt="Orla Demo" width="800">
 </p>
 
-Orla is a unix tool for running lightweight open-source agents. It is easy to add to a script, use with pipes, or build things on top of.
+**Orla is to agent execution what vLLM and SGLang are to LLM serving.** One server, a clear API, and a minimal surface. Tools are defined in code and supplied via the API.
 
-Orla is also an agentic serving stack. It sits above LLM backends including SGLang, Ollama, and vLLM, and provides agent-granularity control. This includes model selection, inference backend coordination, and inference state (e.g. KV cache) management. Using Orla 
-as your agentic serving stack allows you to optimize for end-to-end agent completion time and cost. See [Overview](docs/overview.md) for the full picture.
+Orla is a unix tool for running lightweight open-source agents. It is easy to add to a script, use with pipes, or build things on top of. It sits above LLM backends (SGLang, Ollama, vLLM) and provides agent-granularity control: model selection, inference coordination, and inference state (e.g. KV cache) management. See the [documentation](https://orlaserver.github.io) for the full picture.
 
 ## Modes of operation
 
-Orla supports two modes. Choose the one that matches how you want to use it:
+Orla has two modes:
 
-1. `orla agent` runs an interactive agent loop that consumes context, calls tools, and incorporates results. The orla agent uses a lightweight local model served over ollama by default. Use this for terminal one-offs, scripts, and pipes.
+1. **`orla serve`** — Run the Orla agent engine (HTTP API for inference, workflows, and multi-agent coordination). Driven programmatically via the API. See the [documentation](https://orlaserver.github.io).
 
-2. `orla daemon` runs Orla's Agentic Serving Layer and acts as an orchestrator for one or more agents and workflows. You can drive workflows via the HTTP API. Use this to specify multi-agent workflows, model cascades, and agents that need per-step inference backend selection.
-
-3. `orla serve` runs a self-contained MCP server.
-
-`orla agent` and `orla serve` work with minimal config (or none). `orla daemon`, the agentic serving layer, requires an `orla.yaml` with an `agentic_serving` section containing workflows, agent profiles, LLM servers etc. See [Daemon and workflows](docs/daemon.md) for details.
+2. **`orla agent`** — One-shot run: `orla agent "<prompt>"` (optional stdin/pipes, `--model`).
 
 ## Quickstart
 
@@ -77,13 +72,13 @@ curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/instal
 
 Simple and usable tools are a key part of the [Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy). Tools like `grep`, `curl`, and `git` have become second nature and are huge wins for an inclusive and productive ecosystem. They are fast, reliable, and composable. However, the ecosystem around AI and AI agents currently feels like using a bloated monolithic piece of proprietary software with over-priced and kafkaesque licensing fees.
 
-Orla is built on a simple premise: AI should be a (free software) tool you own, not a service you rent. It treats simplicity, reliability, and composability as first-order priorities. Orla uses models running on your own machine and automatically discovers the tools you already have, making it powerful and private right out of the box. It requires no API keys, subscriptions, or power-hungry data centers. To summarize,
+Orla is built on a simple premise: AI should be a (free software) tool you own, not a service you rent. It treats simplicity, reliability, and composability as first-order priorities. Orla uses models running on your own machine; you define tools in config or pass them via API, making it powerful and private right out of the box. It requires no API keys, subscriptions, or power-hungry data centers. To summarize,
 
 1. Orla runs locally. Your data, queries, and tools never leave your machine without your explicit instruction. It's private by default.
 2. Orla brings the power of modern LLMs to your terminal with a dead-simple interface. If you know how to use `grep`, you know how to use Orla.
 3. Orla is free and open-source software. No subscriptions, no vendor lock-in.
 
-See the RFCs in `docs/rfcs/` for more details on the roadmap.
+See the [documentation](https://orlaserver.github.io) for more details on the roadmap.
 
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
@@ -95,13 +90,9 @@ See the RFCs in `docs/rfcs/` for more details on the roadmap.
   - [Installation](#installation)
   - [Usage](#usage)
     - [Use `orla agent` on a terminal directly](#use-orla-agent-on-a-terminal-directly)
-    - [Use `orla serve` to integrate with other MCP clients](#use-orla-serve-to-integrate-with-other-mcp-clients)
-    - [Use `orla daemon` for workflows and multi-agent coordination](#use-orla-daemon-for-workflows-and-multi-agent-coordination)
-    - [Installing Tools from the Registry](#installing-tools-from-the-registry)
-    - [Creating Custom Tools](#creating-custom-tools)
+    - [Use `orla serve` for the agent engine](#use-orla-serve-for-the-agent-engine)
 - [Configuring Orla](#configuring-orla)
   - [Configuration Options](#configuration-options)
-    - [MCP Server options](#mcp-server-options)
     - [Orla Agent options](#orla-agent-options)
   - [Example Configuration](#example-configuration)
 - [Developer's Guide](#developers-guide)
@@ -110,7 +101,7 @@ See the RFCs in `docs/rfcs/` for more details on the roadmap.
   - [Testing](#testing)
 - [Community + Contributions](#community--contributions)
   - [Supporting Orla](#supporting-orla)
-  - [Integration guides](#integration-guides)
+  - [Documentation](#documentation)
 - [Miscellaneous](#miscellaneous)
   - [Uninstalling Orla](#uninstalling-orla)
 
@@ -187,10 +178,9 @@ This lets you pipe context directly into orla. Here's a second example:
 git status | orla agent "Draft a short, imperative-mood commit message for these changes"
 ```
 
-You can install one of Orla's tools (`fs`) and do file operations like this:
+Example:
 
 ```bash
-orla tool install fs
 orla agent "find all TODO comments in *.c files in `pwd`" > todos.txt
 ```
 
@@ -200,99 +190,21 @@ You can also override the model:
 orla agent "List all files in the current directory" --model ollama:ministral-3:3b
 ```
 
-#### Use `orla serve` to integrate with other MCP clients
+#### Use `orla serve` for the agent engine
 
-For integration with external MCP clients (like Claude Desktop), run Orla as a server:
-
-Start server on default port (8080):
+When you need workflow orchestration, agent profiles, or multi-agent coordination (e.g. alternating turns, model cascades, shared context and KV cache policies), run the Orla agent engine:
 
 ```bash
-orla serve
+orla serve --config orla.yaml
 ```
 
-Use stdio transport
-
-```bash
-orla serve --stdio
-```
-
-If no configuration file is specified, Orla will automatically check for `orla.yaml` in the current directory. If not found, default configuration is used.
-
-You can hot reload Orla to refresh tools and configuration without restarting:
-
-```bash
-kill -HUP $(pgrep orla)
-```
-
-#### Use `orla daemon` for workflows and multi-agent coordination
-
-When you need workflow orchestration, agent profiles, or multi-agent coordination (e.g. alternating turns, model cascades, shared context and KV cache policies), run the Agentic Serving Layer as a daemon:
-
-```bash
-orla daemon --config orla.yaml
-```
-
-The daemon reads `orla.yaml` and exposes an HTTP API. Clients start a workflow, pull the next task, execute it (the daemon runs inference), complete the task, and repeat until the workflow is done. See [Daemon and workflows](docs/daemon.md) for configuration (workflows, agent profiles, LLM servers) and the [daemon API client](pkg/api/README.md) for driving workflows from Go.
-
-#### Installing Tools from the Registry
-
-The easiest way to get started is to install tools from the [Orla Tool Registry](https://github.com/dorcha-inc/orla-registry):
-
-Install the latest version of a tool
-```bash
-orla install fs
-```
-
-Install a specific version
-
-```bash
-orla install coinflip --version v0.1.0
-```
-
-Search for available tools
-
-```bash
-orla search $search_term
-```
-
-Installed tools are automatically placed in the default tools directory and will be discovered by Orla when you start the server or use agent mode.
-
-#### Creating Custom Tools
-
-You can also create your own tools. Any executable can be a tool:
-
-```bash
-mkdir tools
-cat > tools/hello.sh << 'EOF'
-#!/bin/bash
-echo "Hello from orla!"
-EOF
-chmod +x tools/hello.sh
-```
-
-Orla will automatically discover and make these tools available.
+The server exposes an HTTP API; clients drive workflows and supply tools in code or via the API. See the [documentation](https://orlaserver.github.io).
 
 ## Configuring Orla
 
-Orla works out of the box with zero configuration, but you can customize it with a YAML config file. The options below apply to **agent** and **serve**. For **daemon** mode, you need an `agentic_serving` section (workflows, agent profiles, LLM servers)—see [Daemon and workflows](docs/daemon.md). Configuration follows a precedence order:
-
-1. Environment variables (highest precedence) - e.g., `ORLA_PORT=3000`
-2. Project config (`./orla.yaml` in current directory)
-3. User config (`~/.orla/config.yaml`)
-4. Orla's Defaults (lowest precedence)
-
-If you create an `orla.yaml` file in your project directory, it will override the global user config for that project. This allows project-specific settings while maintaining global defaults.
+Orla uses defaults when no config file is given. To customize, pass a single config file: **`orla serve --config orla.yaml`** or point **agent** at a file (see docs). No home-dir or project-dir resolution—just one path.
 
 ### Configuration Options
-
-#### MCP Server options
-
-- `tools_dir`: Directory containing executable tools (default: `.orla/tools`)
-- `port`: HTTP server port (default: `8080`, ignored in stdio mode)
-- `timeout`: Tool execution timeout in seconds (default: `30`)
-- `log_format`: `"json"` or `"pretty"` (default: `"json"`)
-- `log_level`: `"debug"`, `"info"`, `"warn"`, `"error"`, or `"fatal"` (default: `"info"`)
-- `log_file`: Optional log file path (default: empty, logs to stderr)
 
 #### Orla Agent options
 
@@ -308,15 +220,11 @@ If you create an `orla.yaml` file in your project directory, it will override th
 
 ### Example Configuration
 
-Create an `orla.yaml` file in your project directory:
+Example `orla.yaml`:
 
 ```yaml
-# Server mode configuration
-tools_dir: ./tools
-port: 8080
+# Tool execution
 timeout: 30
-log_format: json
-log_level: info
 
 # Agent mode configuration
 model: ollama:llama3
@@ -402,13 +310,9 @@ All the amazing folks who have taken their time to contribute something cool to 
 
 If Orla becomes a tool you love, please consider [sponsoring the project](https://github.com/sponsors/jadidbourbaki). Your support helps us dedicate more time to maintenance and building the future of local AI.
 
-### Integration guides
+### Documentation
 
-- [Overview](docs/overview.md) — What Orla is: agentic serving stack, modes, and how they fit together
-- [Daemon and workflows](docs/daemon.md) — Run `orla daemon`, configure workflows, agent profiles, and LLM servers
-- [Claude Desktop Integration](docs/integrations/claude-desktop.md)
-- [MCP Client for Ollama Integration](docs/integrations/mcp-client-ollama.md)
-- [Goose AI Agent Integration](docs/integrations/goose.md)
+Full documentation (overview, serve/daemon, workflows, integrations) is at **[orlaserver.github.io](https://orlaserver.github.io)**.
 
 ## Miscellaneous
 

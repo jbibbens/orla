@@ -12,7 +12,7 @@ import (
 
 // TestInit_PrettyLog tests logger initialization with pretty logging
 func TestInit_PrettyLog(t *testing.T) {
-	err := Init(true)
+	err := InitLogger(true)
 	require.NoError(t, err)
 
 	// Verify logger is initialized
@@ -32,7 +32,7 @@ func TestInit_Error(t *testing.T) {
 	// We'll test with valid inputs and verify error handling structure
 
 	// Test that Init succeeds with valid inputs
-	err := Init(false)
+	err := InitLogger(false)
 	require.NoError(t, err)
 
 	// The error path (config.Build() failure) is hard to trigger without
@@ -41,7 +41,7 @@ func TestInit_Error(t *testing.T) {
 
 // TestInit_JSONLog tests logger initialization with JSON logging
 func TestInit_JSONLog(t *testing.T) {
-	err := Init(false)
+	err := InitLogger(false)
 	require.NoError(t, err)
 
 	// Verify logger is initialized
@@ -94,71 +94,6 @@ func TestLogToolExecution_Error(t *testing.T) {
 	assert.Equal(t, 2.0, entry.ContextMap()["duration_seconds"])
 	assert.Equal(t, false, entry.ContextMap()["success"])
 	assert.NotNil(t, entry.ContextMap()["error"])
-}
-
-// TestLogRequest_Success tests logging a successful request
-func TestLogRequest_Success(t *testing.T) {
-	// Set up observer to capture logs
-	core, logs := observer.New(zap.InfoLevel)
-	logger := zap.New(core)
-	zap.ReplaceGlobals(logger)
-
-	LogRequest("tools/list", 0.1, nil)
-
-	// Verify log was written
-	require.Equal(t, 1, logs.Len())
-	entry := logs.All()[0]
-	assert.Equal(t, "Request completed successfully", entry.Message)
-	assert.Equal(t, zap.InfoLevel, entry.Level)
-
-	// Verify fields
-	assert.Equal(t, "tools/list", entry.ContextMap()["method"])
-	assert.Equal(t, 0.1, entry.ContextMap()["duration_seconds"])
-}
-
-// TestLogRequest_Error tests logging a failed request
-func TestLogRequest_Error(t *testing.T) {
-	// Set up observer to capture logs
-	core, logs := observer.New(zap.ErrorLevel)
-	logger := zap.New(core)
-	zap.ReplaceGlobals(logger)
-
-	testErr := errors.New("request failed")
-	LogRequest("tools/call", 0.5, testErr)
-
-	// Verify log was written
-	require.Equal(t, 1, logs.Len())
-	entry := logs.All()[0]
-	assert.Equal(t, "Request failed", entry.Message)
-	assert.Equal(t, zap.ErrorLevel, entry.Level)
-
-	// Verify fields
-	assert.Equal(t, "tools/call", entry.ContextMap()["method"])
-	assert.Equal(t, 0.5, entry.ContextMap()["duration_seconds"])
-	assert.NotNil(t, entry.ContextMap()["error"])
-}
-
-// TestLogPanicRecovery tests logging a recovered panic
-func TestLogPanicRecovery(t *testing.T) {
-	// Set up observer to capture logs
-	core, logs := observer.New(zap.ErrorLevel)
-	logger := zap.New(core)
-	zap.ReplaceGlobals(logger)
-
-	panicValue := "test panic"
-	LogPanicRecovery("test-component", panicValue)
-
-	// Verify log was written
-	require.Equal(t, 1, logs.Len())
-	entry := logs.All()[0]
-	assert.Equal(t, "Panic recovered", entry.Message)
-	assert.Equal(t, zap.ErrorLevel, entry.Level)
-
-	// Verify fields
-	assert.Equal(t, "test-component", entry.ContextMap()["component"])
-	assert.Equal(t, panicValue, entry.ContextMap()["panic_value"])
-	// Stack trace is logged but may not be in ContextMap, verify it exists in the entry
-	assert.NotEmpty(t, entry.Message)
 }
 
 // TestLogDeferredError_WithError tests LogDeferredError when function returns an error

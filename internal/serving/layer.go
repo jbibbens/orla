@@ -43,10 +43,10 @@ func (l *Layer) GetAgentProfile(profileName string) (*config.AgentProfile, bool)
 	return profile, exists
 }
 
-// NewLayer creates a new serving layer
+// NewLayer creates a new serving layer. cfg may be nil or empty for a programmatic-only setup.
 func NewLayer(cfg *config.AgenticServingConfig) (*Layer, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("agentic serving configuration is required")
+		cfg = &config.AgenticServingConfig{}
 	}
 
 	// Create server manager

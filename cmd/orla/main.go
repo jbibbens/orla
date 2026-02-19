@@ -2,45 +2,43 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 var (
-	version   string // Set via -ldflags at build time
-	buildDate string // Set via -ldflags at build time
+	// version is set via -ldflags at build time
+	version string
+	// buildDate is set via -ldflags at build time
+	buildDate string
 )
 
-func init() {
+func validateVersionAndBuildDate() {
 	if version == "" {
-		version = "dev"
+		zap.L().Fatal("version is not set, please set the version via -ldflags at build time")
 	}
+
 	if buildDate == "" {
-		buildDate = "unknown"
+		zap.L().Fatal("buildDate is not set, please set the buildDate via -ldflags at build time")
 	}
 }
 
 func main() {
-	rootCmd := &cobra.Command{
-		Use:   "orla",
-		Short: "Orla MCP server runtime and agent",
-		Long: `Orla is a runtime for Model Context Protocol (MCP) servers that automatically
-discovers and executes tools from the filesystem.
+	validateVersionAndBuildDate()
 
-Orla supports both MCP server mode (orla serve) and agent mode (orla agent).`,
+	rootCmd := &cobra.Command{
+		Use:     "orla",
+		Short:   "Orla agent engine and CLI",
+		Long:    `Orla is an execution engine for building high performance agentic systems. Use "orla serve" to run the agent engine as a service or "orla agent" for one-shot agent runs.`,
 		Version: fmt.Sprintf("%s (built: %s)", version, buildDate),
 	}
 
-	// Add subcommands
 	rootCmd.AddCommand(newServeCmd())
-	rootCmd.AddCommand(newToolCmd()) // Tool management commands (RFC 4)
-	rootCmd.AddCommand(newCacheCmd())
-	rootCmd.AddCommand(newAgentCmd()) // Agent mode (RFC 4)
-	rootCmd.AddCommand(newDaemonCmd()) // Agentic Serving Layer daemon (RFC 5)
+	rootCmd.AddCommand(newAgentCmd())
 
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	rootErr := rootCmd.Execute()
+	if rootErr != nil {
+		zap.L().Fatal("Error executing root command", zap.Error(rootErr))
 	}
 }
