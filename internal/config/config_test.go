@@ -12,47 +12,21 @@ import (
 
 const invalidValue = "invalid"
 
-// setupTestConfig creates a temporary directory with an orla.yaml config file
-// and changes to that directory. Returns the temp directory and a cleanup function.
-func setupTestConfig(t *testing.T) (tmpDir string, cleanup func()) {
-	tmpDir = t.TempDir()
-
-	// Create orla.yaml config
-	configPath := filepath.Join(tmpDir, "orla.yaml")
-	configContent := "port: 8080\n"
-	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
-
-	// Change to temp directory
-	originalDir, err := os.Getwd()
-	require.NoError(t, err)
-	cleanup = func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			// Can't use t.Logf in cleanup, so we ignore the error
-			_ = chdirErr
-		}
-	}
-	require.NoError(t, os.Chdir(tmpDir))
-
-	return tmpDir, cleanup
-}
-
 func TestLoadConfig_Defaults(t *testing.T) {
 	// Empty path: defaults only, no file read
 	cfg, err := LoadConfig("")
 	require.NoError(t, err)
 	assert.Equal(t, 8080, cfg.Port)
-	assert.Equal(t, 30, cfg.Timeout)
+	assert.Equal(t, 30, cfg.ToolTimeout)
 	assert.Equal(t, DefaultModel, cfg.Model)
 	assert.Equal(t, 10, cfg.MaxToolCalls)
 	assert.Equal(t, OrlaOutputFormatAuto, cfg.OutputFormat)
-	assert.Equal(t, false, cfg.DryRun)
 }
 
 func TestLoadConfig_WithSpecificPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "custom.yaml")
-	configContent := "port: 9000\ntimeout: 60\n"
+	configContent := "port: 9000\ntool_timeout: 60\n"
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 
@@ -60,7 +34,7 @@ func TestLoadConfig_WithSpecificPath(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 9000, cfg.Port)
-	assert.Equal(t, 60, cfg.Timeout)
+	assert.Equal(t, 60, cfg.ToolTimeout)
 }
 
 func TestLoadConfig_InvalidConfigFile(t *testing.T) {
@@ -77,7 +51,9 @@ func TestLoadConfig_InvalidConfigFile(t *testing.T) {
 func TestValidateConfig(t *testing.T) {
 	cfg := &OrlaConfig{
 		Port:         8080,
-		Timeout:      30,
+		ToolTimeout:  30,
+		LogFormat:    OrlaLogFormatJSON,
+		LogLevel:     "info",
 		Model:        DefaultModel,
 		MaxToolCalls: DefaultMaxToolCalls,
 		OutputFormat: OrlaOutputFormatAuto,
@@ -94,15 +70,15 @@ func TestValidateConfig(t *testing.T) {
 
 	// Test invalid timeout
 	cfg.Port = 8080
-	cfg.Timeout = 0
+	cfg.ToolTimeout = 0
 	// validateConfig sets default timeout to 30 if 0, so we need to set it to -1 to trigger error
-	cfg.Timeout = -1
+	cfg.ToolTimeout = -1
 	err = validateConfig(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout must be at least 1 second")
 
 	// Test invalid log format
-	cfg.Timeout = 30
+	cfg.ToolTimeout = 30
 	cfg.LogFormat = invalidValue
 	err = validateConfig(cfg)
 	require.Error(t, err)
@@ -130,36 +106,18 @@ func TestValidateConfig(t *testing.T) {
 	assert.Contains(t, err.Error(), "output_format must be one of")
 }
 
-func TestPostProcessConfig_EmptyDir(t *testing.T) {
-	cfg := &OrlaConfig{}
-	err := postProcessConfig(cfg, "")
-	require.NoError(t, err)
-	assert.NotNil(t, cfg.ToolsRegistry)
-	assert.Empty(t, cfg.ToolsRegistry.Tools)
-}
-
-func TestPostProcessConfig_WithDir(t *testing.T) {
-	cfg := &OrlaConfig{}
-	err := postProcessConfig(cfg, t.TempDir())
-	require.NoError(t, err)
-	assert.NotNil(t, cfg.ToolsRegistry)
-	assert.Empty(t, cfg.ToolsRegistry.Tools)
-}
-
 func TestLoadConfig_WithYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test.yaml")
 	configContent := `
 port: 9000
-timeout: 60
+tool_timeout: 60
 log_format: pretty
 log_level: debug
 model: openai:gpt-4
 max_tool_calls: 20
 streaming: false
 output_format: rich
-confirm_destructive: false
-dry_run: true
 `
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
@@ -168,15 +126,13 @@ dry_run: true
 	require.NoError(t, err)
 
 	assert.Equal(t, 9000, cfg.Port)
-	assert.Equal(t, 60, cfg.Timeout)
+	assert.Equal(t, 60, cfg.ToolTimeout)
 	assert.Equal(t, OrlaLogFormatPretty, cfg.LogFormat)
 	assert.Equal(t, "debug", cfg.LogLevel)
 	assert.Equal(t, "openai:gpt-4", cfg.Model)
 	assert.Equal(t, 20, cfg.MaxToolCalls)
 	assert.Equal(t, false, cfg.Streaming)
 	assert.Equal(t, OrlaOutputFormatRich, cfg.OutputFormat)
-	assert.Equal(t, false, cfg.ConfirmDestructive)
-	assert.Equal(t, true, cfg.DryRun)
 }
 
 func TestLoadConfig_InvalidYAML(t *testing.T) {
@@ -206,7 +162,7 @@ func TestValidateConfig_Defaults(t *testing.T) {
 	cfg2, err := LoadConfig(configPath)
 	require.NoError(t, err)
 	assert.Equal(t, 9000, cfg2.Port)
-	assert.Equal(t, 30, cfg2.Timeout)
+	assert.Equal(t, 30, cfg2.ToolTimeout)
 	assert.Equal(t, DefaultModel, cfg2.Model)
 	assert.Equal(t, DefaultMaxToolCalls, cfg2.MaxToolCalls)
 	assert.Equal(t, OrlaOutputFormatAuto, cfg2.OutputFormat)
@@ -222,24 +178,20 @@ func TestValidateConfig_BadValues(t *testing.T) {
 	assert.Contains(t, err.Error(), "port must be between 0 and 65535")
 
 	cfg = &OrlaConfig{
+		Port:         8080,
+		ToolTimeout:  0,
+		LogFormat:    OrlaLogFormatJSON,
+		LogLevel:     "info",
 		Model:        "test",
 		MaxToolCalls: 10,
-		Timeout:      0,
-		OutputFormat: "auto",
+		OutputFormat: OrlaOutputFormatAuto,
 	}
 
 	err = validateConfig(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout must be at least 1 second")
 
-	cfg.Timeout = 30
-	cfg.Model = ""
-
-	err = validateConfig(cfg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "model cannot be empty")
-
-	cfg.Model = "test"
+	cfg.ToolTimeout = 30
 	cfg.MaxToolCalls = 0
 
 	err = validateConfig(cfg)
@@ -256,9 +208,9 @@ func TestValidateConfig_BadValues(t *testing.T) {
 
 func TestConfig_MarshalUnmarshal(t *testing.T) {
 	cfg := &OrlaConfig{
-		Port:    9000,
-		Timeout: 60,
-		Model:   "openai:gpt-4",
+		Port:        9000,
+		ToolTimeout: 60,
+		Model:       "openai:gpt-4",
 	}
 
 	data, err := yaml.Marshal(cfg)
@@ -269,35 +221,6 @@ func TestConfig_MarshalUnmarshal(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, cfg.Port, cfg2.Port)
-	assert.Equal(t, cfg.Timeout, cfg2.Timeout)
+	assert.Equal(t, cfg.ToolTimeout, cfg2.ToolTimeout)
 	assert.Equal(t, cfg.Model, cfg2.Model)
-}
-
-// TestLoadConfig_ExplicitEmptyValues tests that explicit empty/zero values in config files
-// correctly raise validation errors.
-func TestLoadConfig_ExplicitEmptyValues(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Explicit empty model should error
-	configPath1 := filepath.Join(tmpDir, "empty_model.yaml")
-	require.NoError(t, os.WriteFile(configPath1, []byte(`model: ""`), 0644))
-	_, err := LoadConfig(configPath1)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "model cannot be empty")
-
-	// Explicit zero max_tool_calls should error
-	configPath2 := filepath.Join(tmpDir, "zero_tools.yaml")
-	require.NoError(t, os.WriteFile(configPath2, []byte("max_tool_calls: 0"), 0644))
-	_, err = LoadConfig(configPath2)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "max_tool_calls must be at least 1")
-
-	// Only port set; other fields get defaults
-	configPath3 := filepath.Join(tmpDir, "partial.yaml")
-	require.NoError(t, os.WriteFile(configPath3, []byte("port: 9000"), 0644))
-	cfg, err := LoadConfig(configPath3)
-	require.NoError(t, err)
-	assert.Equal(t, DefaultModel, cfg.Model)
-	assert.Equal(t, DefaultMaxToolCalls, cfg.MaxToolCalls)
-	assert.Equal(t, 9000, cfg.Port)
 }

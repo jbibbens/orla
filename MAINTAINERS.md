@@ -21,6 +21,6 @@ Maintainers are expected to:
 - Review and merge pull requests
 - Help triage issues
 - Guide the project's technical direction
-- Ensure code quality and test coverage
+- Ensure code quality
 - Release new versions
 - Foster a welcoming and inclusive community

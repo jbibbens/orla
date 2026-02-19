@@ -11,7 +11,6 @@
   <a href="https://goreportcard.com/report/github.com/dorcha-inc/orla"><img src="https://goreportcard.com/badge/github.com/dorcha-inc/orla" alt="Go Report Card"></a>
   <a href="https://www.bestpractices.dev/projects/6573"><img src="https://www.bestpractices.dev/projects/6573/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://github.com/dorcha-inc/orla/actions/workflows/build.yml"><img src="https://github.com/dorcha-inc/orla/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-  <a href="https://codecov.io/gh/dorcha-inc/orla"><img src="https://codecov.io/gh/dorcha-inc/orla/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://discord.gg/bzKYCFewPT"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
@@ -212,8 +211,6 @@ Orla uses defaults when no config file is given. To customize, pass a single con
 - `max_tool_calls`: Maximum tool calls per prompt (default: `10`)
 - `streaming`: Enable streaming responses (default: `true`)
 - `output_format`: Output format - `"auto"`, `"rich"`, or `"plain"` (default: `"auto"`)
-- `confirm_destructive`: Prompt for confirmation on destructive actions (default: `true`)
-- `dry_run`: Default to dry-run mode (default: `false`)
 - `show_thinking`: Show thinking trace output for thinking-capable models (default: `false`)
 - `show_tool_calls`: Show detailed tool call information (default: `false`)
 - `show_progress`: Show progress messages even when UI is disabled (e.g., when stdin is piped) (default: `false`)
@@ -231,7 +228,6 @@ model: ollama:llama3
 max_tool_calls: 10
 streaming: true
 output_format: auto
-confirm_destructive: true
 show_thinking: false
 show_tool_calls: true
 ```
@@ -265,16 +261,6 @@ and then install locally:
 ```bash
 make install
 ```
-
-### Git hooks
-
-orla includes pre-commit hooks for secret detection, linting, and testing. to enable them, run this once:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-this configures git to automatically use hooks from `.githooks/` - no setup script needed!
 
 ### Testing
 
