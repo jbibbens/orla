@@ -1,4 +1,4 @@
 # Orla server config for docker-compose.sglang.yaml.
-listen_address: ":8081"
+listen_address: "0.0.0.0:8081"
 log_format: pretty
 log_level: info
