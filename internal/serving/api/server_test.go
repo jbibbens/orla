@@ -129,7 +129,8 @@ func TestServer_HandleRegisterBackend_Validation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body, _ := json.Marshal(tt.req)
+			body, err := json.Marshal(tt.req)
+			require.NoError(t, err)
 			resp := httptest.NewRecorder()
 			req := httptest.NewRequest("POST", "/api/v1/backends", bytes.NewReader(body))
 			server.mux.ServeHTTP(resp, req)
