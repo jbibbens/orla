@@ -23,7 +23,7 @@ func NewAgentExecutor(daemonURL string) *AgentExecutor {
 
 // AgentExecuteRequest represents a request to execute an agent.
 type AgentExecuteRequest struct {
-	Server    string      `json:"server"`
+	Backend   string      `json:"backend"`
 	Prompt    string      `json:"prompt"`
 	Messages  []Message   `json:"messages,omitempty"`
 	Tools     []*mcp.Tool `json:"tools,omitempty"`
@@ -31,10 +31,10 @@ type AgentExecuteRequest struct {
 	Stream    bool        `json:"stream,omitempty"`
 }
 
-// Execute runs a single inference call against the named server.
+// Execute runs a single inference call against the named backend.
 func (e *AgentExecutor) Execute(ctx context.Context, req *AgentExecuteRequest) (*TaskResponse, error) {
 	return e.client.Execute(ctx, &ExecuteRequest{
-		Server:    req.Server,
+		Backend:   req.Backend,
 		Prompt:    req.Prompt,
 		Messages:  req.Messages,
 		Tools:     req.Tools,
@@ -47,7 +47,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, req *AgentExecuteRequest) (
 // The daemon handles inference; the client handles tool execution via MCP.
 func (e *AgentExecutor) ExecuteWithTools(
 	ctx context.Context,
-	server string,
+	backend string,
 	prompt string,
 	mcpSession *mcp.ClientSession,
 	maxIterations int,
@@ -73,7 +73,7 @@ func (e *AgentExecutor) ExecuteWithTools(
 
 	for iteration := 0; iteration < maxIterations; iteration++ {
 		req := &AgentExecuteRequest{
-			Server:   server,
+			Backend:  backend,
 			Prompt:   prompt,
 			Messages: conversation,
 			Tools:    validTools,

@@ -25,7 +25,7 @@ func TestAgentExecutor_Execute_Success(t *testing.T) {
 
 		var req ExecuteRequest
 		require.NoError(t, decodeJSON(r, &req))
-		assert.Equal(t, "my-server", req.Server)
+		assert.Equal(t, "my-server", req.Backend)
 
 		response := ExecuteResponse{
 			Success: true,
@@ -41,7 +41,7 @@ func TestAgentExecutor_Execute_Success(t *testing.T) {
 	executor := NewAgentExecutor(server.URL)
 	ctx := context.Background()
 	req := &AgentExecuteRequest{
-		Server:    "my-server",
+		Backend:   "my-server",
 		Prompt:    "test prompt",
 		MaxTokens: 100,
 	}
@@ -72,7 +72,7 @@ func TestAgentExecutor_Execute_WithMessages(t *testing.T) {
 	executor := NewAgentExecutor(server.URL)
 	ctx := context.Background()
 	req := &AgentExecuteRequest{
-		Server: "my-server",
+		Backend: "my-server",
 		Prompt: "test prompt",
 		Messages: []Message{
 			{Role: "user", Content: "hello"},
@@ -100,7 +100,7 @@ func TestAgentExecutor_Execute_WithTools(t *testing.T) {
 	executor := NewAgentExecutor(server.URL)
 	ctx := context.Background()
 	req := &AgentExecuteRequest{
-		Server: "my-server",
+		Backend: "my-server",
 		Prompt: "test prompt",
 		Tools: []*mcp.Tool{
 			{
@@ -128,7 +128,7 @@ func TestAgentExecutor_Execute_ErrorResponse(t *testing.T) {
 	executor := NewAgentExecutor(server.URL)
 	ctx := context.Background()
 	req := &AgentExecuteRequest{
-		Server: "my-server",
+		Backend: "my-server",
 		Prompt: "test prompt",
 	}
 
@@ -147,7 +147,7 @@ func TestAgentExecutor_Execute_NonOKStatus(t *testing.T) {
 	executor := NewAgentExecutor(server.URL)
 	ctx := context.Background()
 	req := &AgentExecuteRequest{
-		Server: "my-server",
+		Backend: "my-server",
 		Prompt: "test prompt",
 	}
 

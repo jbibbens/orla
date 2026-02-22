@@ -74,7 +74,7 @@ func TestClient_Execute_Success(t *testing.T) {
 
 		var req ExecuteRequest
 		require.NoError(t, decodeJSON(r, &req))
-		assert.Equal(t, "my-server", req.Server)
+		assert.Equal(t, "my-server", req.Backend)
 		assert.Equal(t, "test prompt", req.Prompt)
 
 		response := ExecuteResponse{
@@ -91,7 +91,7 @@ func TestClient_Execute_Success(t *testing.T) {
 	client := NewClient(server.URL)
 	ctx := context.Background()
 	resp, err := client.Execute(ctx, &ExecuteRequest{
-		Server: "my-server",
+		Backend: "my-server",
 		Prompt: "test prompt",
 	})
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestClient_Execute_ErrorResponse(t *testing.T) {
 	client := NewClient(server.URL)
 	ctx := context.Background()
 	_, err := client.Execute(ctx, &ExecuteRequest{
-		Server: "my-server",
+		Backend: "my-server",
 		Prompt: "test prompt",
 	})
 	assert.Error(t, err)
@@ -129,7 +129,7 @@ func TestClient_Execute_NonOKStatus(t *testing.T) {
 	client := NewClient(server.URL)
 	ctx := context.Background()
 	_, err := client.Execute(ctx, &ExecuteRequest{
-		Server: "my-server",
+		Backend: "my-server",
 		Prompt: "test prompt",
 	})
 	assert.Error(t, err)
@@ -143,7 +143,7 @@ func TestClient_Execute_RequestError(t *testing.T) {
 	client := NewClient(server.URL)
 	ctx := context.Background()
 	_, err := client.Execute(ctx, &ExecuteRequest{
-		Server: "my-server",
+		Backend: "my-server",
 		Prompt: "test prompt",
 	})
 	assert.Error(t, err)

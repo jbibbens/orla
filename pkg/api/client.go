@@ -4,7 +4,7 @@
 //
 //	client := orla.NewClient("http://localhost:8081")
 //	resp, err := client.Execute(ctx, &orla.ExecuteRequest{
-//	    Server: "my-server",
+//	    Backend: "my-backend",
 //	    Prompt: "What is the weather in SF?",
 //	})
 package orla
@@ -53,9 +53,51 @@ func (c *Client) Health(ctx context.Context) error {
 	return nil
 }
 
-// ExecuteRequest represents a request to execute inference on a named server.
+// RegisterBackendRequest is the request body for registering an LLM backend.
+type RegisterBackendRequest struct {
+	Name         string `json:"name"`                     // backend name (used as Backend in execute requests)
+	Endpoint     string `json:"endpoint"`                 // e.g. "http://localhost:8000/v1"
+	Type         string `json:"type"`                     // "openai", "ollama", or "sglang"
+	ModelID      string `json:"model_id"`                 // e.g. "openai:Qwen/Qwen3-4B-Instruct-2507"
+	APIKeyEnvVar string `json:"api_key_env_var,omitempty"` // optional env var for API key (openai-type)
+}
+
+// RegisterBackendResponse is the response from register backend.
+type RegisterBackendResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+}
+
+// RegisterBackend registers an LLM backend with the daemon. Call this before using the backend in Execute.
+func (c *Client) RegisterBackend(ctx context.Context, req *RegisterBackendRequest) (*RegisterBackendResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/backends", c.baseURL)
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("register backend request failed: %w", err)
+	}
+	defer LogDeferredError(httpResp.Body.Close)
+	var resp RegisterBackendResponse
+	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("register backend failed: %s", resp.Error)
+	}
+	return &resp, nil
+}
+
+// ExecuteRequest represents a request to execute inference on a named backend.
 type ExecuteRequest struct {
-	Server    string      `json:"server"`
+	Backend   string      `json:"backend"`
 	Prompt    string      `json:"prompt,omitempty"`
 	Messages  []Message   `json:"messages,omitempty"`
 	Tools     interface{} `json:"tools,omitempty"` // MCP tools ([]*mcp.Tool) or any JSON-serializable tool list
@@ -91,7 +133,7 @@ type TaskResponseMetrics struct {
 	TPOTMs int64 `json:"tpot_ms,omitempty"`
 }
 
-// Execute runs inference on the named server via the daemon.
+// Execute runs inference on the named backend via the daemon.
 func (c *Client) Execute(ctx context.Context, req *ExecuteRequest) (*TaskResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/execute", c.baseURL)
 

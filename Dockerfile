@@ -16,6 +16,6 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /orla /usr/local/bin/orla
 
-# Default: run the agentic daemon (override with orla.yaml path via mount + -c)
+# Default: run the Orla server. Mount a config at /config/orla.yaml (see deploy/*.yaml) or override CMD with --config /path/to/orla.yaml.
 ENTRYPOINT ["orla"]
-CMD ["daemon", "--config", "/config/orla.yaml"]
+CMD ["serve", "--config", "/config/orla.yaml"]

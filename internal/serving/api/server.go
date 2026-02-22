@@ -42,6 +42,8 @@ func NewAgenticServer(layer *serving.AgenticLayer, listenAddress string) *Agenti
 func (s *AgenticServer) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/v1/execute", s.handleExecute)
+	s.mux.HandleFunc("POST /api/v1/backends", s.handleRegisterBackend)
+	s.mux.HandleFunc("GET /api/v1/backends", s.handleListBackends)
 }
 
 // Start starts the HTTP server
@@ -66,7 +68,7 @@ func (s *AgenticServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // ExecuteRequest is the request body for the execute endpoint.
 type ExecuteRequest struct {
-	Server    string          `json:"server"`
+	Backend   string          `json:"backend"`
 	Prompt    string          `json:"prompt,omitempty"`
 	Messages  []model.Message `json:"messages,omitempty"`
 	Tools     []*mcp.Tool     `json:"tools,omitempty"`
@@ -88,8 +90,8 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Server == "" {
-		http.Error(w, "server is required", http.StatusBadRequest)
+	if req.Backend == "" {
+		http.Error(w, "backend is required", http.StatusBadRequest)
 		return
 	}
 
@@ -107,7 +109,7 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	response, err := s.layer.Execute(ctx, req.Server, messages, req.Tools, serving.ExecuteOptions{
+	response, err := s.layer.Execute(ctx, req.Backend, messages, req.Tools, serving.ExecuteOptions{
 		MaxTokens: maxTokens,
 		Stream:    req.Stream,
 	})
@@ -122,7 +124,7 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	zap.L().Debug("Executed inference via API",
-		zap.String("server", req.Server),
+		zap.String("backend", req.Backend),
 		zap.Int("response_length", len(response.Content)))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -131,4 +133,86 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 		Success:  true,
 		Response: response,
 	})
+}
+
+// RegisterBackendRequest is the request body for registering an LLM backend.
+type RegisterBackendRequest struct {
+	Name          string `json:"name"`                     // backend name (used as "backend" in execute requests)
+	Endpoint      string `json:"endpoint"`                 // e.g. "http://vllm:8000/v1", "http://localhost:11434"
+	Type          string `json:"type"`                     // "openai" or "ollama" or "sglang"
+	ModelID       string `json:"model_id"`                 // full model identifier e.g. "openai:Qwen/Qwen3-4B-Instruct-2507", "ollama:llama3"
+	APIKeyEnvVar  string `json:"api_key_env_var,omitempty"` // optional env var name for API key (for openai-type backends)
+}
+
+// RegisterBackendResponse is the response body for register backend.
+type RegisterBackendResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+}
+
+func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Request) {
+	var req RegisterBackendRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Endpoint == "" {
+		http.Error(w, "endpoint is required", http.StatusBadRequest)
+		return
+	}
+	if req.Type == "" {
+		http.Error(w, "type is required", http.StatusBadRequest)
+		return
+	}
+	if req.ModelID == "" {
+		http.Error(w, "model_id is required", http.StatusBadRequest)
+		return
+	}
+
+	backendType := core.LLMInferenceAPIType(req.Type)
+	switch backendType {
+	case core.LLMInferenceAPITypeOpenAI, core.LLMInferenceAPITypeOllama, core.LLMInferenceAPITypeSGLang:
+		// supported
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		core.WriteJSONResponse(w, RegisterBackendResponse{
+			Success: false,
+			Error:   fmt.Sprintf("type must be one of: openai, ollama, sglang; got %q", req.Type),
+		})
+		return
+	}
+
+	backend := &core.LLMBackend{
+		Endpoint:     req.Endpoint,
+		Type:         backendType,
+		APIKeyEnvVar: req.APIKeyEnvVar,
+	}
+	s.layer.AddLLMBackend(req.Name, backend, req.ModelID)
+
+	zap.L().Info("Registered LLM backend",
+		zap.String("name", req.Name),
+		zap.String("endpoint", req.Endpoint),
+		zap.String("model_id", req.ModelID))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	core.WriteJSONResponse(w, RegisterBackendResponse{Success: true})
+}
+
+// ListBackendsResponse is the response body for list backends.
+type ListBackendsResponse struct {
+	Backends []string `json:"backends"`
+}
+
+func (s *AgenticServer) handleListBackends(w http.ResponseWriter, r *http.Request) {
+	names := s.layer.ListLLMBackends()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	core.WriteJSONResponse(w, ListBackendsResponse{Backends: names})
 }

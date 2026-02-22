@@ -1,6 +1,6 @@
 # Orla agentic daemon + vLLM (OpenAI-compatible). Run: docker compose -f deploy/docker-compose.vllm.yaml up -d
 # Requires GPU. Default model: Qwen/Qwen3-4B-Instruct-2507. Daemon API: http://localhost:8081.
-# Edit deploy/orla-vllm.yaml so agentic_serving.llm_servers[0].model matches the model vLLM serves.
+# Ensure deploy/orla-vllm.yaml exists and the Orla server has a backend registered for the vLLM endpoint (see deploy/README.md).
 
 services:
   vllm:
@@ -8,8 +8,6 @@ services:
     container_name: orla-vllm
     ports:
       - "8000:8000"
-    environment:
-      - HF_TOKEN=${HF_TOKEN:-}
     volumes:
       - vllm_cache:/root/.cache/huggingface
     command: ["--model", "${VLLM_MODEL:-Qwen/Qwen3-4B-Instruct-2507}"]
@@ -34,12 +32,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: orla-daemon-vllm
-    command: ["daemon", "--config", "/config/orla.yaml"]
+    command: ["serve", "--config", "/config/orla.yaml"]
     ports:
       - "8081:8081"
-    environment:
-      # Local vLLM does not validate; any non-empty value satisfies Orla's API-key check.
-      - VLLM_API_KEY=dummy
     volumes:
       - ./orla-vllm.yaml:/config/orla.yaml:ro
     depends_on:

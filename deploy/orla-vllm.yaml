@@ -1,0 +1,4 @@
+# Orla server config for docker-compose.vllm.yaml.
+listen_address: ":8081"
+log_format: pretty
+log_level: info
