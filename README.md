@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="share/orla_banner_no_caption.png" alt="Orla" width="400">
+  <img src="share/orla_banner_no_caption.png" alt="Orla" width="500">
 </p>
 
 <p align="center">
