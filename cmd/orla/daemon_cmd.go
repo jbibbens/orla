@@ -39,7 +39,10 @@ func newServeCmd() *cobra.Command {
 				zap.L().Fatal("Failed to initialize logger", zap.Error(coreInitErr))
 			}
 
-			listenAddress := "localhost:8081"
+			listenAddress := cfg.ListenAddress
+			if listenAddress == "" {
+				listenAddress = "localhost:8081"
+			}
 			if listenAddr != "" {
 				listenAddress = listenAddr
 			}

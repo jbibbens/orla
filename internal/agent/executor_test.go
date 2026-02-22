@@ -118,7 +118,7 @@ func TestCreateStreamHandler_MultipleThinkingEvents(t *testing.T) {
 
 func TestExecuteAgentPrompt_EmptyPrompt(t *testing.T) {
 	// Test that ExecuteAgentPrompt handles empty prompt
-	err := ExecuteAgentPrompt("", "")
+	err := ExecuteAgentPrompt("", "", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "prompt is required")
 }
@@ -126,7 +126,7 @@ func TestExecuteAgentPrompt_EmptyPrompt(t *testing.T) {
 func TestExecuteAgentPrompt_ModelOverride(t *testing.T) {
 	// Test that model override is applied
 	// We can verify the model override is passed through by checking error messages
-	err := ExecuteAgentPrompt("test prompt", "invalid-model-override")
+	err := ExecuteAgentPrompt("test prompt", "invalid-model-override", "")
 	// Should fail because the model override format is invalid
 	require.Error(t, err)
 	// The error should indicate the model override was attempted and failed validation

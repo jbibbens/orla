@@ -8,6 +8,7 @@ import (
 // newAgentCmd creates the agent command for one-shot execution
 func newAgentCmd() *cobra.Command {
 	var modelFlag string
+	var configPath string
 
 	cmd := &cobra.Command{
 		Use:   "agent <prompt>",
@@ -19,10 +20,11 @@ The prompt is provided as a single argument. If the prompt contains spaces, quot
   orla agent "summarize this" < file.txt`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return agent.ExecuteAgentPrompt(args[0], modelFlag)
+			return agent.ExecuteAgentPrompt(args[0], modelFlag, configPath)
 		},
 	}
 
 	cmd.Flags().StringVarP(&modelFlag, "model", "m", "", "Model to use (e.g., ollama:llama3)")
+	cmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to config file (default: use built-in defaults)")
 	return cmd
 }

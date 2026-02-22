@@ -65,11 +65,14 @@ var validLogFormats = map[OrlaLogFormat]struct{}{
 }
 
 // OrlaConfig represents the orla configuration for agent mode (and minimal shared settings).
-// The server is configured programmatically; no server-specific options are in config.
+// TODO(jadidbourbaki): move agent and service config to separate structs.
 type OrlaConfig struct {
-	// Common configuration used by agent mode
-	LogFormat    OrlaLogFormat    `yaml:"log_format,omitempty" mapstructure:"log_format"`       // the log format, "pretty" or "json"
-	LogLevel     string           `yaml:"log_level,omitempty" mapstructure:"log_level"`         // the log level, "debug", "info", "warn", "error", "fatal"
+	// Service only
+	ListenAddress string `yaml:"listen_address,omitempty" mapstructure:"listen_address"` // address to bind (e.g. "localhost:8081", ":8081")
+	// Common to both service and agent
+	LogFormat OrlaLogFormat `yaml:"log_format,omitempty" mapstructure:"log_format"` // the log format, "pretty" or "json"
+	LogLevel  string        `yaml:"log_level,omitempty" mapstructure:"log_level"`   // the log level, "debug", "info", "warn", "error", "fatal"
+	// Agent only (ignored by orla serve)
 	LLMBackend   *core.LLMBackend `yaml:"llm_backend,omitempty" mapstructure:"llm_backend"`     // LLM backend configuration (endpoint, type, api_key)
 	Model        string           `yaml:"model,omitempty" mapstructure:"model"`                 // model identifier (e.g., "ollama:ministral-3:8b", "openai:gpt-4")
 	Streaming    bool             `yaml:"streaming,omitempty" mapstructure:"streaming"`         // enable streaming responses
@@ -97,6 +100,7 @@ func setupViper(configPath string) error {
 
 // setViperDefaults sets default values in Viper
 func setViperDefaults() {
+	viper.SetDefault("listen_address", "localhost:8081")
 	viper.SetDefault("log_format", "json")
 	viper.SetDefault("log_level", "info")
 	viper.SetDefault("model", DefaultModel)

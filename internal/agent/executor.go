@@ -234,7 +234,8 @@ func createContextWithSignals() (context.Context, context.CancelFunc) {
 }
 
 // ExecuteAgentPrompt is the main entry point for one-shot agent execution.
-func ExecuteAgentPrompt(prompt string, modelOverride string) error {
+// configPath is the path to the config file; if empty, defaults only (no file read).
+func ExecuteAgentPrompt(prompt string, modelOverride string, configPath string) error {
 	if prompt == "" {
 		return fmt.Errorf("prompt is required")
 	}
@@ -251,7 +252,7 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 		prompt = fmt.Sprintf("%s\n\n--- Content from stdin ---\n%s\n--- End of content from stdin ---", prompt, stdinContent)
 	}
 
-	cfg, configErr := config.LoadConfig("")
+	cfg, configErr := config.LoadConfig(configPath)
 	if configErr != nil {
 		return fmt.Errorf("failed to load config: %w", configErr)
 	}

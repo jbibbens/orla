@@ -21,10 +21,6 @@ test-integration: ## Run only integration tests (requires Ollama)
 		go test -tags=integration -run Integration -count=1 ./...; \
 	fi
 
-.PHONY: test-e2e
-test-e2e: ## Run end-to-end tests for all examples
-	@./scripts/e2e-test.sh
-
 .PHONY: coverage
 coverage: ## Generate coverage report (coverage.html, excludes integration tests)
 	@# Tests all packages (excluding integration tests); codecov.yml excludes cmd/ and examples/ in CI/CD
