@@ -1,27 +1,4 @@
-// Package orla provides a public Go client library for the Orla serving layer daemon.
-//
-// Example (non-streaming):
-//
-//	client := orla.NewClient("http://localhost:8081")
-//	resp, err := client.Execute(ctx, &orla.ExecuteRequest{
-//	    Backend: "my-backend",
-//	    Prompt:  "What is the weather in SF?",
-//	})
-//
-// Example (streaming):
-//
-//	events, err := client.ExecuteStream(ctx, &orla.ExecuteRequest{
-//	    Backend: "my-backend",
-//	    Prompt:  "Explain recursion briefly.",
-//	})
-//	if err != nil { ... }
-//	for ev := range events {
-//	    switch ev.Type {
-//	    case "content":  fmt.Print(ev.Content)
-//	    case "thinking": fmt.Print(ev.Thinking)
-//	    case "done":     resp = ev.Response
-//	    }
-//	}
+// Package orla provides a public Go client library for Orla server
 package orla
 
 import (
@@ -35,22 +12,22 @@ import (
 	"strings"
 )
 
-// Client is the public API client for the Orla daemon
-type Client struct {
+// OrlaClient is the public API client for the Orla daemon
+type OrlaClient struct {
 	baseURL    string
 	httpClient *http.Client
 }
 
-// NewClient creates a new daemon API client.
-func NewClient(baseURL string) *Client {
-	return &Client{
+// NewOrlaClient creates a new daemon API client.
+func NewOrlaClient(baseURL string) *OrlaClient {
+	return &OrlaClient{
 		baseURL:    baseURL,
 		httpClient: &http.Client{},
 	}
 }
 
 // Health checks the health of the daemon
-func (c *Client) Health(ctx context.Context) error {
+func (c *OrlaClient) Health(ctx context.Context) error {
 	url := fmt.Sprintf("%s/api/v1/health", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -85,8 +62,10 @@ type RegisterBackendResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+type LLMBackend = RegisterBackendRequest
+
 // RegisterBackend registers an LLM backend with the daemon. Call this before using the backend in Execute.
-func (c *Client) RegisterBackend(ctx context.Context, req *RegisterBackendRequest) (*RegisterBackendResponse, error) {
+func (c *OrlaClient) RegisterBackend(ctx context.Context, req *RegisterBackendRequest) (*LLMBackend, error) {
 	url := fmt.Sprintf("%s/api/v1/backends", c.baseURL)
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -109,7 +88,16 @@ func (c *Client) RegisterBackend(ctx context.Context, req *RegisterBackendReques
 	if !resp.Success {
 		return nil, fmt.Errorf("register backend failed: %s", resp.Error)
 	}
-	return &resp, nil
+
+	backend := &LLMBackend{
+		Name:         req.Name,
+		Endpoint:     req.Endpoint,
+		Type:         req.Type,
+		ModelID:      req.ModelID,
+		APIKeyEnvVar: req.APIKeyEnvVar,
+	}
+
+	return backend, nil
 }
 
 // ExecuteRequest represents a request to execute inference on a named backend.
@@ -124,9 +112,9 @@ type ExecuteRequest struct {
 
 // ExecuteResponse represents the response from an execute call.
 type ExecuteResponse struct {
-	Success  bool          `json:"success"`
-	Response *TaskResponse `json:"response,omitempty"`
-	Error    string        `json:"error,omitempty"`
+	Success  bool               `json:"success"`
+	Response *InferenceResponse `json:"response,omitempty"`
+	Error    string             `json:"error,omitempty"`
 }
 
 // Message represents a chat message.
@@ -135,28 +123,28 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// TaskResponse represents the response from inference.
-type TaskResponse struct {
-	Content     string               `json:"content"`
-	Thinking    string               `json:"thinking,omitempty"`
-	ToolCalls   []any                `json:"tool_calls,omitempty"`
-	ToolResults []any                `json:"tool_results,omitempty"`
-	Metrics     *TaskResponseMetrics `json:"metrics,omitempty"`
+// InferenceResponse represents the response from inference.
+type InferenceResponse struct {
+	Content     string                    `json:"content"`
+	Thinking    string                    `json:"thinking,omitempty"`
+	ToolCalls   []any                     `json:"tool_calls,omitempty"`
+	ToolResults []any                     `json:"tool_results,omitempty"`
+	Metrics     *InferenceResponseMetrics `json:"metrics,omitempty"`
 }
 
-// TaskResponseMetrics holds timing metrics from streaming execution.
-type TaskResponseMetrics struct {
+// InferenceResponseMetrics holds timing metrics from streaming execution.
+type InferenceResponseMetrics struct {
 	TTFTMs int64 `json:"ttft_ms,omitempty"`
 	TPOTMs int64 `json:"tpot_ms,omitempty"`
 }
 
 // StreamEvent is a single event from ExecuteStream. Exactly one of Content, Thinking, ToolCall, or Response is set, depending on Type.
 type StreamEvent struct {
-	Type     string         // "content", "thinking", "tool_call", or "done"
-	Content  string         // content delta (Type == "content")
-	Thinking string         // thinking delta (Type == "thinking")
-	ToolCall *ToolCallDelta // tool call (Type == "tool_call")
-	Response *TaskResponse  // final response (Type == "done")
+	Type     string             // "content", "thinking", "tool_call", or "done"
+	Content  string             // content delta (Type == "content")
+	Thinking string             // thinking delta (Type == "thinking")
+	ToolCall *ToolCallDelta     // tool call (Type == "tool_call")
+	Response *InferenceResponse // final response (Type == "done")
 }
 
 // ToolCallDelta is a streaming tool call notification.
@@ -166,7 +154,7 @@ type ToolCallDelta struct {
 }
 
 // ExecuteStream runs inference with streaming. The returned channel receives content, thinking, and tool_call deltas, then a final "done" event with the full Response. Caller must consume the channel until closed.
-func (c *Client) ExecuteStream(ctx context.Context, req *ExecuteRequest) (<-chan StreamEvent, error) {
+func (c *OrlaClient) ExecuteStream(ctx context.Context, req *ExecuteRequest) (<-chan StreamEvent, error) {
 	streamReq := *req
 	streamReq.Stream = true
 
@@ -275,7 +263,7 @@ func parseSSEEvent(eventType, data string) *StreamEvent {
 }
 
 // Execute runs inference on the named backend via the daemon.
-func (c *Client) Execute(ctx context.Context, req *ExecuteRequest) (*TaskResponse, error) {
+func (c *OrlaClient) Execute(ctx context.Context, req *ExecuteRequest) (*InferenceResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/execute", c.baseURL)
 
 	body, err := json.Marshal(req)

@@ -2,155 +2,100 @@ package orla
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// AgentExecutor provides high-level agent execution with tool support.
-// The daemon handles inference; the client handles the agent loop with tools.
-type AgentExecutor struct {
-	client *Client
+// Agent holds a client, a registered backend, and optional prompt/settings for execute calls.
+// Use Execute for a single response, or ExecuteStream for token-by-token events.
+type Agent struct {
+	Client    *OrlaClient
+	Backend   *LLMBackend
+	Prompt    string
+	MaxTokens int
 }
 
-// NewAgentExecutor creates a new agent executor.
-func NewAgentExecutor(daemonURL string) *AgentExecutor {
-	return &AgentExecutor{
-		client: NewClient(daemonURL),
-	}
+// NewAgent returns an agent that uses the given client and backend.
+func NewAgent(client *OrlaClient, backend *LLMBackend) *Agent {
+	return &Agent{Client: client, Backend: backend}
 }
 
-// AgentExecuteRequest represents a request to execute an agent.
-type AgentExecuteRequest struct {
-	Backend   string      `json:"backend"`
-	Prompt    string      `json:"prompt"`
-	Messages  []Message   `json:"messages,omitempty"`
-	Tools     []*mcp.Tool `json:"tools,omitempty"`
-	MaxTokens int         `json:"max_tokens,omitempty"`
-	Stream    bool        `json:"stream,omitempty"`
+// NewAgentWithPrompt returns an agent with the prompt set (e.g. for a one-shot run).
+func NewAgentWithPrompt(client *OrlaClient, backend *LLMBackend, prompt string) *Agent {
+	return &Agent{Client: client, Backend: backend, Prompt: prompt}
 }
 
-// Execute runs a single inference call against the named backend.
-func (e *AgentExecutor) Execute(ctx context.Context, req *AgentExecuteRequest) (*TaskResponse, error) {
-	return e.client.Execute(ctx, &ExecuteRequest{
-		Backend:   req.Backend,
-		Prompt:    req.Prompt,
-		Messages:  req.Messages,
-		Tools:     req.Tools,
-		MaxTokens: req.MaxTokens,
-		Stream:    req.Stream,
-	})
+// SetPrompt sets the agent's prompt.
+func (a *Agent) SetPrompt(prompt string) {
+	a.Prompt = prompt
 }
 
-// ExecuteWithTools executes an agent with tool support, handling the full agent loop.
-// The daemon handles inference; the client handles tool execution via MCP.
-func (e *AgentExecutor) ExecuteWithTools(
-	ctx context.Context,
-	backend string,
-	prompt string,
-	mcpSession *mcp.ClientSession,
-	maxIterations int,
-	onIteration func(iteration int, response *TaskResponse) error,
-) (*TaskResponse, error) {
-	if maxIterations <= 0 {
-		maxIterations = 10
+// SetMaxTokens sets the maximum tokens for execute calls (0 means backend default).
+func (a *Agent) SetMaxTokens(n int) {
+	a.MaxTokens = n
+}
+
+// req returns an ExecuteRequest from the agent's current fields.
+func (a *Agent) req() *ExecuteRequest {
+	r := &ExecuteRequest{Backend: a.Backend.Name, Prompt: a.Prompt}
+	if a.MaxTokens > 0 {
+		r.MaxTokens = a.MaxTokens
 	}
+	return r
+}
 
-	listResult, err := mcpSession.ListTools(ctx, &mcp.ListToolsParams{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list tools: %w", err)
+// Execute runs a single non-streaming inference and returns the full response.
+func (a *Agent) Execute(ctx context.Context) (*InferenceResponse, error) {
+	return a.Client.Execute(ctx, a.req())
+}
+
+// ExecuteStream runs inference with streaming and returns a channel of events (content, thinking, tool_call, done).
+func (a *Agent) ExecuteStream(ctx context.Context) (<-chan StreamEvent, error) {
+	return a.Client.ExecuteStream(ctx, a.req())
+}
+
+// StreamHandler is an optional callback invoked for each stream event (e.g. to print tokens).
+// ConsumeStream always accumulates and returns the full InferenceResponse; the handler is for side effects only.
+type StreamHandler func(event StreamEvent) error
+
+// ConsumeStream reads the stream until "done", accumulates content/thinking/metrics, and returns the result.
+// If streamHandler is non-nil, it is called for each event before processing (e.g. to print content as it arrives).
+func (a *Agent) ConsumeStream(ctx context.Context, stream <-chan StreamEvent, streamHandler StreamHandler) (*InferenceResponse, error) {
+	response := &InferenceResponse{
+		Content:     "",
+		Thinking:    "",
+		ToolCalls:   []any{},
+		ToolResults: []any{},
+		Metrics:     &InferenceResponseMetrics{},
 	}
-
-	validTools := make([]*mcp.Tool, 0, len(listResult.Tools))
-	for _, tool := range listResult.Tools {
-		if tool != nil && tool.Name != "" {
-			validTools = append(validTools, tool)
-		}
-	}
-
-	var conversation []Message
-
-	for iteration := 0; iteration < maxIterations; iteration++ {
-		req := &AgentExecuteRequest{
-			Backend:  backend,
-			Prompt:   prompt,
-			Messages: conversation,
-			Tools:    validTools,
-		}
-
-		response, err := e.Execute(ctx, req)
-		if err != nil {
-			return nil, fmt.Errorf("inference failed on iteration %d: %w", iteration+1, err)
-		}
-
-		if onIteration != nil {
-			if err := onIteration(iteration+1, response); err != nil {
-				return nil, fmt.Errorf("iteration callback error: %w", err)
-			}
-		}
-
-		if response.Content != "" {
-			conversation = append(conversation, Message{
-				Role:    "assistant",
-				Content: response.Content,
-			})
-		}
-
-		if len(response.ToolCalls) == 0 {
-			return response, nil
-		}
-
-		for _, toolCall := range response.ToolCalls {
-			toolCallMap, ok := toolCall.(map[string]any)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event, ok := <-stream:
 			if !ok {
-				continue
+				return nil, fmt.Errorf("stream closed without a final response")
 			}
-
-			toolName, ok := toolCallMap["name"].(string)
-			if !ok || toolName == "" {
-				continue
-			}
-
-			arguments, ok := toolCallMap["arguments"].(map[string]any)
-			if !ok || arguments == nil {
-				arguments = make(map[string]any)
-			}
-
-			params := &mcp.CallToolParams{
-				Name:      toolName,
-				Arguments: arguments,
-			}
-			result, err := mcpSession.CallTool(ctx, params)
-			if err != nil {
-				return nil, fmt.Errorf("tool call failed for %s: %w", toolName, err)
-			}
-
-			var content string
-			if result != nil && len(result.Content) > 0 {
-				for _, c := range result.Content {
-					if textContent, ok := c.(*mcp.TextContent); ok {
-						content += textContent.Text
-					} else if imageContent, ok := c.(*mcp.ImageContent); ok {
-						if len(imageContent.Data) > 0 {
-							content += fmt.Sprintf("[Image: %d bytes]", len(imageContent.Data))
-						}
-					} else {
-						if jsonBytes, marshalErr := json.Marshal(c); marshalErr == nil {
-							content += string(jsonBytes)
-						}
-					}
+			if streamHandler != nil {
+				if err := streamHandler(event); err != nil {
+					return nil, fmt.Errorf("stream handler: %w", err)
 				}
 			}
-
-			conversation = append(conversation, Message{
-				Role:    "tool",
-				Content: content,
-			})
+			switch event.Type {
+			case "content":
+				response.Content += event.Content
+			case "thinking":
+				response.Thinking += event.Thinking
+			case "tool_call":
+				return nil, fmt.Errorf("tool calls not supported for now")
+			case "done":
+				if event.Response != nil && event.Response.Metrics != nil {
+					response.Metrics.TTFTMs = event.Response.Metrics.TTFTMs
+					response.Metrics.TPOTMs = event.Response.Metrics.TPOTMs
+				}
+				return response, nil
+			default:
+				// Ignore unknown event types for forward compatibility
+			}
 		}
-
-		prompt = ""
 	}
-
-	return nil, fmt.Errorf("max iterations (%d) reached", maxIterations)
 }
