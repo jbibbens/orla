@@ -328,7 +328,7 @@ check_default_model() {
 
     # Wait for Ollama API to be ready before checking/pulling models
     status "waiting for ollama API to be ready..."
-    max_attempts=60
+    max_attempts=120
     attempt=0
     while [ $attempt -lt $max_attempts ]; do
         if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
@@ -339,8 +339,7 @@ check_default_model() {
     done
 
     if [ $attempt -eq $max_attempts ]; then
-        warning "ollama API is not ready yet. model will need to be pulled manually later."
-        return 0
+        error "ollama API did not become ready in time. ensure Ollama is running, then run: ollama pull $DEFAULT_MODEL"
     fi
 
     if ollama list 2>/dev/null | grep -q "^$DEFAULT_MODEL"; then
@@ -394,6 +393,10 @@ install_on_linux() {
         sleep 2
         if ! available orla; then
             error "orla is not installed. homebrew should have installed it."
+        fi
+        # Ensure default model is available before finishing (same as non-homebrew path)
+        if [ "$SKIP_OLLAMA" = "0" ]; then
+            check_default_model
         fi
         return 0
     fi
@@ -499,6 +502,10 @@ install_on_macos() {
         status "homebrew mode: skipping binary installation (orla should already be installed)"
         if ! available orla; then
             error "orla is not installed. homebrew should have installed it."
+        fi
+        # Ensure default model is available before finishing (same as non-homebrew path)
+        if [ "$SKIP_OLLAMA" = "0" ]; then
+            check_default_model
         fi
         return 0
     fi
