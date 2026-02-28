@@ -1,0 +1,6 @@
+{
+  "instance_id": "django__django-11099",
+  "repo": "django/django",
+  "base_commit": "c91a2f467b2d1c0e2a3b4d5e6f7a8b9c0d1e2f3a4",
+  "problem_statement": "When using the admin's raw_id_fields with a limit_choices_to that references the current model (self-referential ForeignKey), the popup fails with a recursion error. The widget should filter choices without causing infinite recursion."
+}

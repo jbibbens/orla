@@ -1,0 +1,13 @@
+[project]
+name = "mini-swe-agent-swebench-lite"
+version = "0.1.0"
+description = "Run mini-SWE-agent on SWE-bench Lite with SGLang (Orla cache-strategy example)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mini-swe-agent[full]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
