@@ -287,6 +287,9 @@ add_orla_to_path() {
 }
 
 add_orla_to_path_macos() {
+    # Install dir for prebuilt binary (default on macOS)
+    INSTALL_DIR="${1:-/usr/local/bin}"
+
     # Check if orla is already in PATH
     if available orla; then
         return 0
@@ -294,26 +297,25 @@ add_orla_to_path_macos() {
 
     status "adding orla to PATH..."
 
-    if ! available go; then
-        warning "go is not available, cannot determine orla install location"
-        return 1
+    # Always add install dir (where we installed the prebuilt binary). If Go is available, also add GOPATH/bin.
+    PATH_DIRS="$INSTALL_DIR"
+    if available go; then
+        GOPATH_BIN=$(go env GOPATH 2>/dev/null || echo "$HOME/go")/bin
+        PATH_DIRS="$PATH_DIRS:$GOPATH_BIN"
     fi
 
-    GOPATH=$(go env GOPATH 2>/dev/null || echo "$HOME/go")
-    ORLA_BIN_DIR="$GOPATH/bin"
-
     # Add to current session
-    export PATH="$PATH:$ORLA_BIN_DIR"
+    export PATH="$PATH:$PATH_DIRS"
 
     # Add to shell config file
     CONFIG_FILE=$(get_shell_config)
     if [ -f "$CONFIG_FILE" ] || touch "$CONFIG_FILE" 2>/dev/null; then
-        add_to_path_in_file "$ORLA_BIN_DIR" "$CONFIG_FILE"
+        add_to_path_in_file "$PATH_DIRS" "$CONFIG_FILE"
         success "added orla to PATH in $CONFIG_FILE :-)"
         warning "run 'source $CONFIG_FILE' or restart your terminal to use orla in new sessions"
     else
         warning "could not add orla to PATH automatically. add this to your shell config:"
-        echo "  export PATH=\$PATH:$ORLA_BIN_DIR"
+        echo "  export PATH=\$PATH:$PATH_DIRS"
     fi
 }
 
@@ -527,13 +529,16 @@ install_on_macos() {
     # download and install orla binary to the install directory
     install_orla "$DOWNLOAD_URL" "$ORLA_INSTALL_DIR" "darwin"
 
-    # add orla to path (already in /usr/local/bin which is typically in PATH)
-    # But check and add to shell config if needed
+    # add orla to path
     if ! available orla; then
-        # /usr/local/bin might not be in PATH, add it
-        add_orla_to_path_macos
+        add_orla_to_path_macos "$ORLA_INSTALL_DIR"
     else
         success "orla is already in PATH :-)"
+    fi
+
+    # Pull default model before returning so it's done even when script is run via curl|sh
+    if [ "$SKIP_OLLAMA" = "0" ]; then
+        check_default_model
     fi
 }
 
