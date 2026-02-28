@@ -49,57 +49,32 @@ func (c *OrlaClient) Health(ctx context.Context) error {
 	return nil
 }
 
-// RegisterBackendRequest is the request body for registering an LLM backend.
-type RegisterBackendRequest struct {
-	Name         string `json:"name"`                      // backend name (used as Backend in execute requests)
-	Endpoint     string `json:"endpoint"`                  // e.g. "http://localhost:8000/v1"
-	Type         string `json:"type"`                      // "openai", "ollama", or "sglang"
-	ModelID      string `json:"model_id"`                  // e.g. "openai:Qwen/Qwen3-4B-Instruct-2507"
-	APIKeyEnvVar string `json:"api_key_env_var,omitempty"` // optional env var for API key (openai-type)
-}
-
-// RegisterBackendResponse is the response from register backend.
-type RegisterBackendResponse struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
-}
-
-type LLMBackend = RegisterBackendRequest
-
 // RegisterBackend registers an LLM backend with the daemon. Call this before using the backend in Execute.
-func (c *OrlaClient) RegisterBackend(ctx context.Context, req *RegisterBackendRequest) (*LLMBackend, error) {
+// Pass the same req (or the *LLMBackend) to NewAgent after a successful registration.
+func (c *OrlaClient) RegisterBackend(ctx context.Context, req *RegisterBackendRequest) error {
 	url := fmt.Sprintf("%s/api/v1/backends", c.baseURL)
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("register backend request failed: %w", err)
+		return fmt.Errorf("register backend request failed: %w", err)
 	}
 	defer LogDeferredError(httpResp.Body.Close)
 	var resp RegisterBackendResponse
 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return fmt.Errorf("failed to decode response: %w", err)
 	}
 	if !resp.Success {
-		return nil, fmt.Errorf("register backend failed: %s", resp.Error)
+		return fmt.Errorf("register backend failed: %s", resp.Error)
 	}
-
-	backend := &LLMBackend{
-		Name:         req.Name,
-		Endpoint:     req.Endpoint,
-		Type:         req.Type,
-		ModelID:      req.ModelID,
-		APIKeyEnvVar: req.APIKeyEnvVar,
-	}
-
-	return backend, nil
+	return nil
 }
 
 // ExecuteRequest represents a request to execute inference on a named backend.
