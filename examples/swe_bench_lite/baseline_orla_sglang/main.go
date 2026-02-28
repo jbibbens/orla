@@ -6,7 +6,7 @@
 //
 // Usage:
 //
-//	go run ./examples/swe_bench_lite/cache_strategy/orla_sglang [flags]
+//	go run ./examples/swe_bench_lite/baseline_orla_sglang [flags]
 //
 // Flags:
 //

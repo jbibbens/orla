@@ -1,0 +1,97 @@
+# SWE-bench Lite baseline: SGLang + Orla + baseline agent.
+# The baseline container starts only after Orla is healthy (Orla waits for SGLang).
+# Run from repo root:
+#   docker compose -f deploy/docker-compose.swebench-baseline.yaml up -d
+#   # From repo root. Create dirs and put instance JSON (paths are relative to deploy/):
+#   mkdir -p deploy/instances deploy/output
+#   cp examples/swe_bench_lite/baseline_orla_sglang/sample_instance.json deploy/instances/instance.json
+# Then run the baseline (one instance per run):
+#   docker compose -f deploy/docker-compose.swebench-baseline.yaml run --rm baseline
+# Predictions: deploy/output/predictions.jsonl
+# Requires GPU for SGLang.
+
+services:
+  sglang:
+    image: lmsysorg/sglang:latest
+    container_name: swebench-baseline-sglang
+    ports:
+      - "30000:30000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - sglang_cache:/root/.cache/huggingface
+    entrypoint: ["python3", "-m", "sglang.launch_server"]
+    command:
+      - "--model-path"
+      - "${SGLANG_MODEL:-Qwen/Qwen3-8B}"
+      - "--tool-call-parser"
+      - "qwen"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "30000"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:30000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  orla:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: orla:latest
+    container_name: swebench-baseline-orla
+    ports:
+      - "8081:8081"
+    command: ["serve", "--config", "/config/orla.yaml"]
+    volumes:
+      - ./orla-sglang.yaml:/config/orla.yaml:ro
+    depends_on:
+      sglang:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8081/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  baseline:
+    build:
+      context: ..
+      dockerfile: examples/swe_bench_lite/baseline_orla_sglang/Dockerfile
+    image: orla-swebench-baseline:latest
+    container_name: swebench-baseline-agent
+    environment:
+      - ORLA_URL=http://orla:8081
+      - WORKDIR_ROOT=/workdir
+      - OUTPUT_PATH=/output/predictions.jsonl
+    volumes:
+      - ./instances:/instances:ro
+      - ./output:/output
+      - swebench_workdir:/workdir
+    depends_on:
+      orla:
+        condition: service_healthy
+    # Default: run on /instances/instance.json. Override to run another file:
+    #   docker compose -f deploy/docker-compose.swebench-baseline.yaml run --rm baseline /instances/other.json
+    command: ["/instances/instance.json"]
+
+volumes:
+  sglang_cache: {}
+  swebench_workdir: {}

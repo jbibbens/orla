@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION} -X main.buildDat
 
 # Runtime stage
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates curl
 COPY --from=builder /orla /usr/local/bin/orla
 
 # Default: run the Orla server. Mount a config at /config/orla.yaml (see deploy/*.yaml) or override CMD with --config /path/to/orla.yaml.

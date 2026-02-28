@@ -1,6 +1,0 @@
-[project]
-name = "sb-cli-swebench-lite"
-version = "1.0.0"
-description = "Run sb-cli for SWE-bench Lite evaluation and submission (Orla / mini-SWE-agent predictions)"
-requires-python = ">=3.10"
-dependencies = ["sb-cli", "typing_extensions"]
