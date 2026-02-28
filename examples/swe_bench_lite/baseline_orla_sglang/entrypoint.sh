@@ -43,9 +43,4 @@ git fetch origin "$BASE_COMMIT" 2>/dev/null || true
 git checkout "$BASE_COMMIT"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
-exec baseline \
-  -orla-url "${ORLA_URL}" \
-  -instance "$INSTANCE_PATH" \
-  -workdir "$WORKDIR" \
-  -output "$OUTPUT_PATH" \
-  "$@"
+exec baseline -instance "$INSTANCE_PATH" "$@"

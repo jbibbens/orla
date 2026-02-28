@@ -1,23 +1,9 @@
-// Run SWE-bench Lite with the Orla client and SGLang backend.
-//
-// Prerequisites:
-//   - Orla daemon running (e.g. docker compose -f deploy/docker-compose.sglang.yaml up -d)
-//   - SGLang serving the model with --tool-call-parser qwen (included in the compose above)
-//
-// Usage:
-//
-//	go run ./examples/swe_bench_lite/baseline_orla_sglang [flags]
-//
-// Flags:
-//
-//	-orla-url: Orla daemon URL (default http://localhost:8081)
-//	-instance: Path to a SWE-bench Lite instance JSON file (one object)
-//	-workdir: Working directory for bash tool (default: current directory)
-//	-max-steps: Max agent steps (default 25)
-//	-output: Output JSONL path for predictions (optional)
 package main
 
+// Run SWE-bench Lite with the Orla client and SGLang backend.
+
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,42 +19,50 @@ import (
 )
 
 const defaultSystemPrompt = `You are a software engineering agent. You have access to a bash shell to run commands.
-Your task is to fix the issue described in the problem statement. You can run any bash command in the repository.
-Work in the repository root. When you have a fix, you can output a unified diff (e.g. from git diff) or describe the changes.
-Use the run_bash tool to execute commands. Each tool call runs a single bash command.`
+Your task is to fix the issue described in the problem statement. Edit the repository files using the run_bash tool (e.g. run an editor, or use sed/cat to change files). Work in the repository root.
+The submitted patch is the git diff of the repository after your edits; Use the run_bash tool to execute commands. Each tool call runs a single bash command.`
+
+const (
+	maxSteps    = 256
+	orlaURL     = "http://orla:8081"
+	sglangURL   = "http://sglang:30000/v1"
+	workdirRoot = "/workdir"
+	outputPath  = "/output/predictions.jsonl"
+)
 
 func main() {
-	orlaURL := flag.String("orla-url", "http://localhost:8081", "Orla daemon URL")
 	instancePath := flag.String("instance", "", "Path to SWE-bench Lite instance JSON file")
-	workdir := flag.String("workdir", ".", "Working directory for bash tool")
-	maxSteps := flag.Int("max-steps", 25, "Max agent steps")
-	outputPath := flag.String("output", "", "Output JSONL path for predictions (optional)")
 	flag.Parse()
 
 	if *instancePath == "" {
-		log.Fatal(" -instance is required (path to SWE-bench Lite instance JSON)")
+		log.Fatal("-instance is required (path to SWE-bench Lite instance JSON)")
+	}
+
+	instance, err := loadInstance(*instancePath)
+	if err != nil {
+		log.Fatalf("Load instance: %v", err)
+	}
+
+	workdir := filepath.Join(workdirRoot, instance.InstanceID)
+	absWorkdir, filePathErr := filepath.Abs(workdir)
+	if filePathErr != nil {
+		log.Fatalf("workdir: %v", filePathErr)
 	}
 
 	ctx := context.Background()
 
-	client := orla.NewOrlaClient(*orlaURL)
+	client := orla.NewOrlaClient(orlaURL)
 	if err := client.Health(ctx); err != nil {
 		log.Fatalf("Orla health check failed: %v (is the daemon running?)", err)
 	}
 
-	// Use OpenAI API and /v1 so tool calls work (SGLang must be started with --tool-call-parser qwen).
-	backend := orla.NewSGLangBackend("Qwen/Qwen3-8B", "http://sglang:30000/v1")
+	backend := orla.NewSGLangBackend("Qwen/Qwen3-8B", sglangURL)
 	if err := client.RegisterBackend(ctx, backend); err != nil {
 		log.Fatalf("Register backend: %v", err)
 	}
 
 	agent := orla.NewAgent(client, backend)
 	agent.SetMaxTokens(4096)
-
-	absWorkdir, err := filepath.Abs(*workdir)
-	if err != nil {
-		log.Fatalf("workdir: %v", err)
-	}
 
 	bashTool, err := orla.NewTool(
 		"run_bash",
@@ -115,16 +109,13 @@ func main() {
 			return orla.ToolSchema{"stdout": stdout, "stderr": stderr, "exit_code": exitCode}, nil
 		}),
 	)
+
 	if err != nil {
-		log.Fatal(err)
-	}
-	if err := agent.AddTool(bashTool); err != nil {
 		log.Fatal(err)
 	}
 
-	instance, err := loadInstance(*instancePath)
-	if err != nil {
-		log.Fatalf("Load instance: %v", err)
+	if addToolErr := agent.AddTool(bashTool); addToolErr != nil {
+		log.Fatal(addToolErr)
 	}
 
 	userContent := fmt.Sprintf("## Problem statement\n\n%s\n\n## Repository\n- repo: %s\n- base_commit: %s\n\nFix the issue using the run_bash tool. Work in the repository root.",
@@ -136,7 +127,7 @@ func main() {
 	}
 
 	var lastContent string
-	for step := 0; step < *maxSteps; step++ {
+	for step := range maxSteps {
 		resp, err := agent.ExecuteWithMessages(ctx, messages)
 		if err != nil {
 			log.Fatalf("Step %d execute: %v", step+1, err)
@@ -158,14 +149,17 @@ func main() {
 		}
 	}
 
-	if *outputPath != "" {
-		patch := extractPatch(lastContent)
+	if outputPath != "" {
+		patch := ""
+		if p, ok := patchFromWorkdir(absWorkdir); ok && strings.TrimSpace(p) != "" {
+			patch = p
+		}
 		pred := prediction{
 			InstanceID:      instance.InstanceID,
 			ModelNameOrPath: "orla-sglang",
 			ModelPatch:      patch,
 		}
-		f, err := os.OpenFile(*outputPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		f, err := os.OpenFile(outputPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err != nil {
 			log.Printf("Warning: could not write predictions: %v", err)
 		} else {
@@ -212,19 +206,14 @@ type prediction struct {
 	ModelPatch      string `json:"model_patch"`
 }
 
-func extractPatch(content string) string {
-	// Naive extraction: look for a diff-like block. Full harness may expect proper unified diff.
-	if idx := strings.Index(content, "```diff"); idx >= 0 {
-		start := idx + 7
-		if end := strings.Index(content[start:], "```"); end >= 0 {
-			return strings.TrimSpace(content[start : start+end])
-		}
+// patchFromWorkdir runs "git diff" in workdir and returns the unified diff if the repo has changes.
+// Returns ("", false) if git diff fails or is empty (e.g. not a git repo, no edits).
+func patchFromWorkdir(workdir string) (string, bool) {
+	cmd := exec.CommandContext(context.Background(), "git", "diff")
+	cmd.Dir = workdir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", false
 	}
-	if idx := strings.Index(content, "```"); idx >= 0 {
-		start := idx + 3
-		if end := strings.Index(content[start:], "```"); end >= 0 {
-			return strings.TrimSpace(content[start : start+end])
-		}
-	}
-	return content
+	return string(out), len(bytes.TrimSpace(out)) > 0
 }
