@@ -915,7 +915,8 @@ func TestHandleStreamResponse_AccumulationAndEvents(t *testing.T) {
                 { "type": "function", "function": { "index": 0, "name": "do_it", "arguments": {"param":"val"} } }
             ]
         },
-        "done": true
+        "done": true,
+        "eval_count": 2
     }`
 
 	// Concatenate chunks without separators to simulate streaming JSON objects
@@ -955,6 +956,11 @@ func TestHandleStreamResponse_AccumulationAndEvents(t *testing.T) {
 	require.Len(t, resp.ToolCalls, 1)
 	assert.Equal(t, "do_it", resp.ToolCalls[0].McpCallToolParams.Name)
 	assert.Equal(t, 1, toolCallEvents)
+
+	// TTFT/TPOT metrics are set when streaming with eval_count in final chunk
+	require.NotNil(t, resp.Metrics)
+	assert.GreaterOrEqual(t, resp.Metrics.TTFTMs, int64(0), "TTFT should be non-negative")
+	assert.GreaterOrEqual(t, resp.Metrics.TPOTMs, int64(0), "TPOT should be non-negative")
 }
 
 // Tests for getOllamaEndpoint with llm_backend configuration

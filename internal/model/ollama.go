@@ -341,6 +341,10 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 		thinkingChunks := 0
 		var accumulatedToolCalls []ollamaToolCall
 
+		start := time.Now()
+		var firstContentAt, lastContentAt time.Time
+		var completionTokens int64
+
 		for {
 			var chunk ollamaChatResponse
 
@@ -355,6 +359,11 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 
 			chunkCount++
 
+			// Capture eval_count from final chunk since Ollama sends it when done is true
+			if chunk.Done && chunk.EvalCount != nil && *chunk.EvalCount > 0 {
+				completionTokens = int64(*chunk.EvalCount)
+			}
+
 			// Accumulate thinking trace
 			if chunk.Message.Thinking != "" {
 				response.Thinking += chunk.Message.Thinking
@@ -366,6 +375,11 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 			if chunk.Message.Content != "" {
 				response.Content += chunk.Message.Content
 				contentChunks++
+				now := time.Now()
+				if firstContentAt.IsZero() {
+					firstContentAt = now
+				}
+				lastContentAt = now
 				ch <- &ContentEvent{Content: chunk.Message.Content}
 			}
 
@@ -412,6 +426,24 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 				zap.Int("count", len(response.ToolCalls)))
 		}
 
+		// Calculate TTFT/TPOT metrics
+		response.Metrics = &ResponseMetrics{}
+
+		// TTFTMs is the time to first token in milliseconds
+		if !firstContentAt.IsZero() {
+			response.Metrics.TTFTMs = firstContentAt.Sub(start).Milliseconds()
+		}
+
+		// TPOTMs is the time per output token in milliseconds
+		// If the time to decode the first content is very short (< 1ms), we set TPOTMs to 1ms.
+		if completionTokens > 0 && !firstContentAt.IsZero() && !lastContentAt.IsZero() {
+			decodeMs := lastContentAt.Sub(firstContentAt).Milliseconds()
+			response.Metrics.TPOTMs = decodeMs / completionTokens
+			if response.Metrics.TPOTMs == 0 && decodeMs > 0 {
+				response.Metrics.TPOTMs = 1
+			}
+		}
+
 		if contentChunks == 0 {
 			zap.L().Warn("Stream completed but no content chunks were received",
 				zap.Int("total_chunks_decoded", chunkCount))
@@ -450,6 +482,11 @@ type ollamaChatRequest struct {
 type ollamaChatResponse struct {
 	Message ollamaResponseMessage `json:"message"`
 	Done    bool                  `json:"done"`
+	// EvalCount is the number of output tokens evaluated by the model. [1,2]
+	// We use this to calculate TTFT/TPOT metrics.
+	// [1]: https://docs.ollama.com/api/usage
+	// [2]: https://docs.ollama.com/api/chat#response-eval-count
+	EvalCount *int `json:"eval_count,omitempty"`
 }
 
 type ollamaResponseMessage struct {
