@@ -132,6 +132,12 @@ type Message struct {
 // RawToolCall is a raw tool call from the inference response.
 type RawToolCall []byte
 
+// UnmarshalJSON stores the raw JSON bytes of the value (object or otherwise) so that tool_calls from the API response decode correctly.
+func (r *RawToolCall) UnmarshalJSON(data []byte) error {
+	*r = append((*r)[0:0], data...)
+	return nil
+}
+
 // InferenceResponse represents the response from inference.
 type InferenceResponse struct {
 	Content   string                    `json:"content"`
