@@ -31,7 +31,7 @@ type Message struct {
 
 // ToolCallWithID represents a tool invocation request from the model.
 // It embeds mcp.CallToolParams for MCP compatibility, and adds an ID
-// for tracking in the agent loop (to match results back to calls).
+// for tracking in the agent loop so we can match results back to calls.
 type ToolCallWithID struct {
 	ID                string `json:"id"` // Unique identifier for this tool call
 	McpCallToolParams mcp.CallToolParams
@@ -65,9 +65,9 @@ type Response struct {
 // JSON tags match the execute API so the server can embed this in ExecuteRequest.
 type InferenceOptions struct {
 	Stream      bool     `json:"stream,omitempty"`
-	MaxTokens   *int     `json:"max_tokens,omitempty"`   // nil = backend default
-	Temperature *float64 `json:"temperature,omitempty"`   // nil = backend default
-	TopP        *float64 `json:"top_p,omitempty"`        // nil = backend default
+	MaxTokens   *int     `json:"max_tokens,omitempty"`  // nil = backend default
+	Temperature *float64 `json:"temperature,omitempty"` // nil = backend default
+	TopP        *float64 `json:"top_p,omitempty"`       // nil = backend default
 }
 
 // Provider is the interface that all model providers must implement

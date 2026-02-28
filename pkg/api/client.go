@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // OrlaClient is the public API client for the Orla daemon
@@ -102,14 +104,14 @@ func (c *OrlaClient) RegisterBackend(ctx context.Context, req *RegisterBackendRe
 
 // ExecuteRequest represents a request to execute inference on a named backend.
 type ExecuteRequest struct {
-	Backend     string    `json:"backend"`
-	Prompt      string    `json:"prompt,omitempty"`
-	Messages    []Message `json:"messages,omitempty"`
-	Tools       any       `json:"tools,omitempty"` // MCP tools ([]*mcp.Tool) or any JSON-serializable tool list
-	MaxTokens   *int      `json:"max_tokens,omitempty"`   // nil = backend default
-	Stream      bool      `json:"stream,omitempty"`
-	Temperature *float64  `json:"temperature,omitempty"`
-	TopP        *float64  `json:"top_p,omitempty"`
+	Backend     string      `json:"backend"`
+	Prompt      string      `json:"prompt,omitempty"`
+	Messages    []Message   `json:"messages,omitempty"`
+	Tools       []*mcp.Tool `json:"tools,omitempty"`
+	MaxTokens   *int        `json:"max_tokens,omitempty"` // nil = backend default
+	Stream      bool        `json:"stream,omitempty"`
+	Temperature *float64    `json:"temperature,omitempty"`
+	TopP        *float64    `json:"top_p,omitempty"`
 }
 
 // ExecuteResponse represents the response from an execute call.
@@ -121,17 +123,18 @@ type ExecuteResponse struct {
 
 // Message represents a chat message.
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
+	ToolName   string `json:"tool_name,omitempty"`
 }
 
 // InferenceResponse represents the response from inference.
 type InferenceResponse struct {
-	Content     string                    `json:"content"`
-	Thinking    string                    `json:"thinking,omitempty"`
-	ToolCalls   []any                     `json:"tool_calls,omitempty"`
-	ToolResults []any                     `json:"tool_results,omitempty"`
-	Metrics     *InferenceResponseMetrics `json:"metrics,omitempty"`
+	Content   string                    `json:"content"`
+	Thinking  string                    `json:"thinking,omitempty"`
+	ToolCalls [][]byte                  `json:"tool_calls,omitempty"`
+	Metrics   *InferenceResponseMetrics `json:"metrics,omitempty"`
 }
 
 // InferenceResponseMetrics holds timing metrics from streaming execution.
