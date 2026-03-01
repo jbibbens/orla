@@ -1,19 +1,15 @@
-# SWE-bench Lite baseline: SGLang + Orla + baseline agent.
-# The baseline container starts only after Orla is healthy (Orla waits for SGLang).
+# SWE-bench Lite experiments: SGLang + Orla + experiment runner.
 # Run from repo root:
-#   docker compose -f deploy/docker-compose.swebench-baseline.yaml up -d
-#   # From repo root. Create dirs and put instance JSON (paths are relative to deploy/):
-#   mkdir -p deploy/instances deploy/output
-#   cp examples/swe_bench_lite/baseline_orla_sglang/sample_instance.json deploy/instances/instance.json
-# Then run the baseline (one instance per run):
-#   docker compose -f deploy/docker-compose.swebench-baseline.yaml run --rm baseline
-# Predictions: deploy/output/predictions.jsonl
+#   docker compose -f deploy/docker-compose.swebench-lite.yaml up -d
+#   mkdir -p deploy/output
+# Run an experiment (make target): docker compose -f deploy/docker-compose.swebench-lite.yaml run --rm run baseline
+# Predictions: deploy/output/predictions.jsonl (per experiment).
 # Requires GPU for SGLang.
 
 services:
   sglang:
     image: lmsysorg/sglang:latest
-    container_name: swebench-baseline-sglang
+    container_name: swebench-lite-sglang
     ports:
       - "30000:30000"
     environment:
@@ -54,7 +50,7 @@ services:
       context: ..
       dockerfile: Dockerfile
     image: orla:latest
-    container_name: swebench-baseline-orla
+    container_name: swebench-lite-orla
     ports:
       - "8081:8081"
     command: ["serve", "--config", "/config/orla.yaml"]
@@ -71,26 +67,23 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  baseline:
+  run:
     build:
       context: ..
-      dockerfile: examples/swe_bench_lite/baseline_orla_sglang/Dockerfile
-    image: orla-swebench-baseline:latest
-    container_name: swebench-baseline-agent
+      dockerfile: examples/swe_bench_lite/Dockerfile
+    image: orla-swebench-lite:latest
+    container_name: swebench-lite-run
     environment:
       - ORLA_URL=http://orla:8081
       - WORKDIR_ROOT=/workdir
       - OUTPUT_PATH=/output/predictions.jsonl
     volumes:
-      - ./instances:/instances:ro
       - ./output:/output
       - swebench_workdir:/workdir
     depends_on:
       orla:
         condition: service_healthy
-    # Default: run on /instances/instance.json. Override to run another file:
-    #   docker compose -f deploy/docker-compose.swebench-baseline.yaml run --rm baseline /instances/other.json
-    command: ["/instances/instance.json"]
+    command: ["baseline"]
 
 volumes:
   sglang_cache: {}
