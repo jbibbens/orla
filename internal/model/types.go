@@ -49,6 +49,10 @@ type ResponseMetrics struct {
 	TTFTMs int64 `json:"ttft_ms,omitempty"`
 	// TPOTMs is time per output token in milliseconds. Only set when task was executed with streaming.
 	TPOTMs int64 `json:"tpot_ms,omitempty"`
+	// PromptTokens is the number of tokens in the prompt (input). Reported by the backend.
+	PromptTokens int `json:"prompt_tokens,omitempty"`
+	// CompletionTokens is the number of tokens generated (output). Reported by the backend.
+	CompletionTokens int `json:"completion_tokens,omitempty"`
 }
 
 // Response represents a model response

@@ -1,12 +1,11 @@
 // Package shared provides common types and helpers for SWE-bench Lite experiments.
-// Use LoadDataset, EnsureRepo, NewBashTool, and PatchFromWorkdir from baseline and other experiments.
+// Use LoadDataset, EnsureRepo, RunAgentLoop, and PatchFromWorkdir from baseline and other experiments.
 package shared
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,51 +13,76 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	orla "github.com/dorcha-inc/orla/pkg/api"
 )
 
 const (
-	// DefaultSystemPrompt is the system message for SWE-bench agent runs.
-	// Modeled after mini-swe-agent: one bash tool, step-by-step workflow, concrete editing examples.
-	DefaultSystemPrompt = `You are a software engineering agent that fixes bugs in Python repositories.
-You have one tool: run_bash. You are already in the repository root.
+	// DefaultSystemPrompt follows the mini-swe-agent pattern: text-based actions with THOUGHT + code block.
+	// Uses a unique code fence tag (orla_bash) to avoid collisions with code in model reasoning.
+	DefaultSystemPrompt = `You are a helpful assistant that can interact multiple times with a computer shell to solve programming tasks.
+Your response must contain exactly ONE bash code block with ONE command (or commands connected with && or ||).
+Include a THOUGHT section before your command where you explain your reasoning process.
+Format your response as shown in <format>.
 
-## Workflow (follow step by step)
+<format>
+THOUGHT: Your reasoning and analysis here. Explain why you want to perform the action.
 
-1. EXPLORE: Find and read the relevant code.
-   Example: grep -rn 'function_name' src/
-   Example: nl -ba src/module.py | sed -n '100,120p'
+` + "```" + `orla_bash
+your_command_here
+` + "```" + `
+</format>
 
-2. REPRODUCE: Write a small script that triggers the bug, then run it to confirm.
-   Example: python3 -c "from module import func; print(func(bad_input))"
+Failure to follow these rules will cause your response to be rejected.
 
-3. EDIT: Fix the source code. Use ONE of these methods:
-   a) sed for simple substitutions (one line):
-      sed -i 's/old_text/new_text/' path/to/file.py
-   b) python3 for anything more complex:
-      python3 -c "
-      import pathlib; p = pathlib.Path('path/to/file.py'); t = p.read_text()
-      t = t.replace('old_code', 'new_code'); p.write_text(t)"
-   c) heredoc to create or overwrite a file:
-      cat <<'EOF' > path/to/file.py
-      new file contents
-      EOF
+## Recommended Workflow
 
-4. VERIFY: Run git diff to confirm your edit applied. If empty, your edit did not match—re-read the file and retry.
+1. Analyze the codebase by finding and reading relevant files
+2. Create a script to reproduce the issue
+3. Edit the source code to resolve the issue
+4. Verify your fix works by running your script again
+5. Test edge cases to ensure your fix is robust
 
-5. TEST: Run your reproduction script again to confirm the fix works.
+## Important Rules
 
-## Rules
-- Call run_bash for every action. Do not write commands in markdown code blocks.
-- Do not run git clone or git checkout.
-- Keep edits minimal and targeted.
-- The submitted patch is the git diff after your edits.`
+- Every response must contain exactly one bash code block
+- Directory or environment variable changes are not persistent. Every action is executed in a new subshell. However, you can prefix any action with ` + "`" + `cd /path/to/dir && ...` + "`" + ` or write/load environment variables from files
+- Do not run git clone or git checkout
+- Keep edits minimal and targeted — modify only source files, not tests or config
 
-	// MaxSteps caps ReAct steps per instance. 50 is the practical ceiling — returns diminish after that.
-	MaxSteps        = 50
+## Useful command examples
+
+### View file content with line numbers:
+` + "```" + `orla_bash
+nl -ba filename.py | sed -n '10,20p'
+` + "```" + `
+
+### Edit files with sed:
+` + "```" + `orla_bash
+sed -i 's/old_string/new_string/g' filename.py
+` + "```" + `
+
+### Edit with python3 (for complex changes):
+` + "```" + `orla_bash
+python3 -c "
+import pathlib; p = pathlib.Path('file.py'); t = p.read_text()
+t = t.replace('old_code', 'new_code'); p.write_text(t)"
+` + "```" + `
+
+### Create a new file:
+` + "```" + `orla_bash
+cat <<'EOF' > newfile.py
+import numpy as np
+print("hello")
+EOF
+` + "```" + ``
+
+	// MaxSteps caps ReAct steps per instance. mini-swe-agent uses 250; we use 100 as a practical limit for local models.
+	MaxSteps        = 100
 	MaxOutputTokens = 4096
 
 	MaxIterations = 10
@@ -72,9 +96,12 @@ You have one tool: run_bash. You are already in the repository root.
 	// MetricsPath is the default path for run metrics (end-to-end, per-instance, per-step). Override with METRICS_PATH.
 	MetricsPath = "/output/metrics.json"
 
-	// MaxToolOutputBytes caps run_bash stdout/stderr so huge outputs don't blow context.
-	// 10KB gives the model enough to read meaningful code while staying within context limits.
-	MaxToolOutputBytes = 10240
+	// MaxToolOutputBytes caps command output sent to the model. Outputs longer than this
+	// are shown as first-half + last-half with an elision message in between.
+	MaxToolOutputBytes = 10000
+
+	// CommandTimeout is the per-command timeout (matches mini-swe-agent's 60s).
+	CommandTimeout = 60
 )
 
 // NoThinking is a map of extra kwargs for the chat template renderer to disable thinking.
@@ -159,7 +186,7 @@ func PrepareWorkdir(ctx context.Context, inst SWEBenchLiteInstance) (absWorkdir 
 
 // FormatProblemMessage returns the user message content for the standard SWE-bench task (problem statement + repo info).
 func FormatProblemMessage(inst SWEBenchLiteInstance) string {
-	return fmt.Sprintf("## Problem statement\n\n%s\n\n## Repository\n- repo: %s\n- base_commit: %s\n\nFix the issue using the run_bash tool. Work in the repository root.",
+	return fmt.Sprintf("Please solve this issue:\n\n%s\n\nRepository: %s (base commit: %s)\n\nYou can execute bash commands to explore, edit files, and verify your fix. The submitted patch is the git diff after your edits.",
 		inst.ProblemStatement, inst.Repo, inst.BaseCommit)
 }
 
@@ -254,74 +281,99 @@ func (e *PredictionEncoder) Encode(p Prediction) error {
 	return e.enc.Encode(p)
 }
 
-// truncateForContext truncates s to at most maxBytes and appends a note so context is not blown by huge tool output.
-func truncateForContext(s string, maxBytes int) string {
-	if len(s) <= maxBytes {
+// truncateForLog truncates s to at most maxLen for log messages.
+func truncateForLog(s string, maxLen int) string {
+	if len(s) <= maxLen {
 		return s
 	}
-	suffix := "\n[... output truncated for context ...]"
-	keep := max(maxBytes-len(suffix), 0)
-	return s[:keep] + suffix
+	return s[:maxLen] + "..."
 }
 
-// NewBashTool returns a run_bash tool that runs commands in the directory returned by getWorkdir.
-// Pass a function that returns the current instance workdir so the tool runs in the right repo.
-func NewBashTool(getWorkdir func() string) (*orla.Tool, error) {
-	return orla.NewTool(
-		"run_bash",
-		"Run a single bash command in the repository. Returns stdout, stderr, and exit code.",
-		orla.ToolSchema{
-			"type": "object",
-			"properties": map[string]any{
-				"command": map[string]any{"type": "string", "description": "The bash command to run (e.g. 'ls -la', 'git status')"},
-			},
-			"required": []any{"command"},
-		},
-		orla.ToolSchema{
-			"type": "object",
-			"properties": map[string]any{
-				"stdout":    map[string]any{"type": "string"},
-				"stderr":    map[string]any{"type": "string"},
-				"exit_code": map[string]any{"type": "integer"},
-			},
-		},
-
-		orla.ToolRunnerFromSchema(func(ctx context.Context, input orla.ToolSchema) (orla.ToolSchema, error) {
-			cmdStr, ok := input["command"].(string)
-			if !ok {
-				return orla.ToolSchema{"stdout": "", "stderr": "command must be a string", "exit_code": 1}, nil
-			}
-
-			cmdStr = strings.TrimSpace(cmdStr)
-			if cmdStr == "" {
-				return orla.ToolSchema{"stdout": "", "stderr": "empty command", "exit_code": 1}, nil
-			}
-			workdir := getWorkdir()
-			cmd := exec.CommandContext(ctx, "bash", "-c", cmdStr)
-			cmd.Dir = workdir
-			var stdoutBuf, stderrBuf bytes.Buffer
-			cmd.Stdout = &stdoutBuf
-			cmd.Stderr = &stderrBuf
-			err := cmd.Run()
-			stdout := truncateForContext(stdoutBuf.String(), MaxToolOutputBytes)
-			stderr := truncateForContext(stderrBuf.String(), MaxToolOutputBytes)
-			exitCode := 0
-			if err != nil {
-				var exitErr *exec.ExitError
-				if errors.As(err, &exitErr) {
-					exitCode = exitErr.ExitCode()
-				} else {
-					stderr = truncateForContext(err.Error(), MaxToolOutputBytes)
-					exitCode = 1
-				}
-			}
-			return orla.ToolSchema{"stdout": stdout, "stderr": stderr, "exit_code": exitCode}, nil
-		}),
-	)
+// truncateForContext caps command output for the model. For outputs longer than MaxToolOutputBytes,
+// shows the first and last portions with an explicit message asking the model to be more selective.
+func truncateForContext(s string) string {
+	if len(s) <= MaxToolOutputBytes {
+		return s
+	}
+	half := MaxToolOutputBytes / 2
+	elided := len(s) - MaxToolOutputBytes
+	return s[:half] +
+		fmt.Sprintf("\n\n[%d characters elided — output too long. Use more selective commands (head, tail, sed -n, grep) to view smaller sections.]\n\n", elided) +
+		s[len(s)-half:]
 }
 
-// RunAgentLoop runs the ReAct loop for a single instance: execute, log, run tools, repeat.
-func RunAgentLoop(ctx context.Context, agent *orla.Agent, messages []orla.Message, metrics *RunMetricsRecorder) error {
+// bashBlockRe matches ```orla_bash ... ``` code blocks in model output.
+// Falls back to ```bash or plain ``` blocks if the model doesn't use the custom tag.
+var bashBlockRe = regexp.MustCompile("(?s)```(?:orla_bash|bash)?\\s*\\n(.+?)\\n```")
+
+// ExtractBashCommand parses the first ```bash ... ``` block from the model's text response.
+func ExtractBashCommand(content string) string {
+	m := bashBlockRe.FindStringSubmatch(content)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
+
+// bashEnv contains environment variable overrides to prevent pagers from hanging and progress bars from flooding context.
+var bashEnv = []string{
+	"PAGER=cat",
+	"MANPAGER=cat",
+	"LESS=-R",
+	"PIP_PROGRESS_BAR=off",
+	"TQDM_DISABLE=1",
+}
+
+// RunBash executes a bash command in workdir with a timeout and returns a formatted observation string.
+func RunBash(ctx context.Context, workdir, cmdStr string) string {
+	cmdCtx, cancel := context.WithTimeout(ctx, CommandTimeout*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, "bash", "-c", cmdStr)
+	cmd.Dir = workdir
+	cmd.Env = append(os.Environ(), bashEnv...)
+	var outBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &outBuf
+	err := cmd.Run()
+	output := truncateForContext(outBuf.String())
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			if cmdCtx.Err() == context.DeadlineExceeded {
+				output += fmt.Sprintf("\n[command timed out after %ds]", CommandTimeout)
+			}
+			exitCode = 1
+		}
+	}
+	return fmt.Sprintf("<returncode>%d</returncode>\n<output>\n%s\n</output>", exitCode, strings.TrimRight(output, "\n"))
+}
+
+const (
+	// maxFormatRetries is how many consecutive format errors we tolerate before stopping.
+	maxFormatRetries = 3
+
+	formatErrorMsg = `Format error: no bash code block found in your response.
+
+Every response MUST include exactly ONE bash code block:
+
+<format>
+THOUGHT: Your reasoning here.
+
+` + "```" + `orla_bash
+your_command_here
+` + "```" + `
+</format>
+
+Please try again with the correct format.`
+)
+
+// RunAgentLoop runs the text-based ReAct loop (no tool calling).
+// The model outputs THOUGHT + ` + "```" + `orla_bash ... ` + "```" + `, we parse and execute the command,
+// then feed the output back as a user message.
+func RunAgentLoop(ctx context.Context, agent *orla.Agent, messages []orla.Message, metrics *RunMetricsRecorder, getWorkdir func() string) error {
+	formatRetries := 0
 	for step := range MaxSteps {
 		log.Printf("step %d: executing", step+1)
 		metrics.BeginStep(step + 1)
@@ -329,46 +381,35 @@ func RunAgentLoop(ctx context.Context, agent *orla.Agent, messages []orla.Messag
 		if err != nil {
 			return fmt.Errorf("step %d execute: %w", step+1, err)
 		}
-		log.Printf("step %d: response: %s", step+1, resp.Content)
-		if len(resp.ToolCalls) == 0 {
+		content := resp.Content
+		if resp.Metrics != nil {
+			metrics.RecordStepTokens(resp.Metrics.PromptTokens, resp.Metrics.CompletionTokens)
+		}
+		log.Printf("step %d: response: %s", step+1, truncateForLog(content, 500))
+
+		cmdStr := ExtractBashCommand(content)
+		if cmdStr == "" {
+			formatRetries++
+			if formatRetries >= maxFormatRetries {
+				metrics.EndStep(step + 1)
+				log.Printf("step %d: %d consecutive format errors, stopping", step+1, formatRetries)
+				return nil
+			}
+			log.Printf("step %d: no bash block found, sending format error (%d/%d)", step+1, formatRetries, maxFormatRetries)
+			messages = append(messages, orla.Message{Role: "assistant", Content: content})
+			messages = append(messages, orla.Message{Role: "user", Content: formatErrorMsg})
 			metrics.EndStep(step + 1)
-			log.Printf("step %d: model finished", step+1)
-			return nil
+			continue
 		}
-		messages = append(messages, orla.Message{Role: "assistant", Content: resp.Content})
-		LogBashCommandsFromResponse(resp)
-		toolMessages, err := agent.RunToolCallsInResponse(ctx, resp)
-		if err != nil {
-			return fmt.Errorf("step %d run tools: %w", step+1, err)
-		}
+		formatRetries = 0
+
+		log.Printf("step %d: [bash] %s", step+1, cmdStr)
+		messages = append(messages, orla.Message{Role: "assistant", Content: content})
+
+		observation := RunBash(ctx, getWorkdir(), cmdStr)
+		log.Printf("step %d: observation: %s", step+1, truncateForLog(observation, 300))
+		messages = append(messages, orla.Message{Role: "user", Content: observation})
 		metrics.EndStep(step + 1)
-		for _, m := range toolMessages {
-			log.Printf("step %d: tool message: %s", step+1, m.Content)
-			messages = append(messages, *m)
-		}
 	}
 	return nil
-}
-
-// LogBashCommandsFromResponse logs each run_bash command from the response's tool calls for visibility.
-func LogBashCommandsFromResponse(response *orla.InferenceResponse) {
-	for _, raw := range response.ToolCalls {
-		tc, err := orla.NewToolCallFromRawToolCall(raw)
-		if err != nil {
-			log.Printf("[tool call] error: new tool call from raw tool call: %v", err)
-		}
-		if tc.Name != "run_bash" {
-			log.Printf("[tool call] error: unknown tool: %s", tc.Name)
-		}
-		cmd, ok := tc.InputArguments["command"].(string)
-		if !ok {
-			log.Printf("[tool call] error: command not a string")
-		}
-
-		if cmd == "" {
-			log.Printf("[tool call] error: empty command")
-		}
-
-		log.Printf("[tool call] run_bash: %s", cmd)
-	}
 }

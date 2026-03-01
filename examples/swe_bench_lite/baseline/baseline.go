@@ -31,16 +31,9 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	stage.SetTemperature(0.7)
 	stage.SetMaxTokens(shared.MaxOutputTokens)
 	stage.SetChatTemplateKwargs(shared.NoThinking)
+	agent.SetStage(stage)
 
 	var currentWorkdir string
-	bashTool, err := shared.NewBashTool(func() string { return currentWorkdir })
-	if err != nil {
-		return fmt.Errorf("new bash tool: %w", err)
-	}
-	if err := stage.AddTool(bashTool); err != nil {
-		return fmt.Errorf("add bash tool: %w", err)
-	}
-	agent.SetStage(stage)
 
 	outFile, err := os.OpenFile(shared.OutputPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -74,7 +67,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		metrics.BeginInstance(inst.InstanceID)
 
 		messages := shared.PrepareInitialMessages(inst)
-		if err := shared.RunAgentLoop(ctx, agent, messages, metrics); err != nil {
+		if err := shared.RunAgentLoop(ctx, agent, messages, metrics, func() string { return currentWorkdir }); err != nil {
 			return fmt.Errorf("instance %s: %w", inst.InstanceID, err)
 		}
 

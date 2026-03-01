@@ -71,17 +71,6 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	heavyStage.SetChatTemplateKwargs(shared.NoThinking)
 
 	var currentWorkdir string
-	bashTool, bashToolErr := shared.NewBashTool(func() string { return currentWorkdir })
-	if bashToolErr != nil {
-		return fmt.Errorf("new bash tool: %w", bashToolErr)
-	}
-
-	if err := lightStage.AddTool(bashTool); err != nil {
-		return fmt.Errorf("add bash tool to light stage: %w", err)
-	}
-	if err := heavyStage.AddTool(bashTool); err != nil {
-		return fmt.Errorf("add bash tool to heavy stage: %w", err)
-	}
 
 	// Router runs on the light model (one forward per instance); ReAct loop uses light or heavy per instance.
 	mapper := orla.NewOneBitStageMapper(client, lightBackend, lightStage, heavyStage)
@@ -126,7 +115,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		agent.SetStage(stage)
 
 		messages := shared.PrepareInitialMessages(inst)
-		if err := shared.RunAgentLoop(ctx, agent, messages, metrics); err != nil {
+		if err := shared.RunAgentLoop(ctx, agent, messages, metrics, func() string { return currentWorkdir }); err != nil {
 			return fmt.Errorf("instance %s: %w", inst.InstanceID, err)
 		}
 

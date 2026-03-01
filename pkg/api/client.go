@@ -150,10 +150,12 @@ type InferenceResponse struct {
 	Metrics   *InferenceResponseMetrics `json:"metrics,omitempty"`
 }
 
-// InferenceResponseMetrics holds timing metrics from streaming execution.
+// InferenceResponseMetrics holds timing and token usage metrics from execution.
 type InferenceResponseMetrics struct {
-	TTFTMs int64 `json:"ttft_ms,omitempty"`
-	TPOTMs int64 `json:"tpot_ms,omitempty"`
+	TTFTMs           int64 `json:"ttft_ms,omitempty"`
+	TPOTMs           int64 `json:"tpot_ms,omitempty"`
+	PromptTokens     int   `json:"prompt_tokens,omitempty"`
+	CompletionTokens int   `json:"completion_tokens,omitempty"`
 }
 
 // StreamEvent is a single event from ExecuteStream. Exactly one of Content, Thinking, ToolCall, or Response is set, depending on Type.

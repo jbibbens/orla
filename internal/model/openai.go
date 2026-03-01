@@ -170,6 +170,10 @@ func (p *OpenAIProvider) handleNonStreamingChat(ctx context.Context, req openai.
 	choice := completion.Choices[0]
 	response := &Response{
 		Content: choice.Message.Content,
+		Metrics: &ResponseMetrics{
+			PromptTokens:     completion.Usage.PromptTokens,
+			CompletionTokens: completion.Usage.CompletionTokens,
+		},
 	}
 
 	// Parse tool calls if present
@@ -206,7 +210,7 @@ func (p *OpenAIProvider) handleStreamingChat(ctx context.Context, req openai.Cha
 
 		start := time.Now()
 		var firstContentAt, lastContentAt time.Time
-		var completionTokens int
+		var promptTokens, completionTokens int
 		var accumulatedToolCalls []openai.ToolCall
 
 		for {
@@ -219,8 +223,13 @@ func (p *OpenAIProvider) handleStreamingChat(ctx context.Context, req openai.Cha
 				break
 			}
 
-			if chunk.Usage != nil && chunk.Usage.CompletionTokens > 0 {
-				completionTokens = chunk.Usage.CompletionTokens
+			if chunk.Usage != nil {
+				if chunk.Usage.PromptTokens > 0 {
+					promptTokens = chunk.Usage.PromptTokens
+				}
+				if chunk.Usage.CompletionTokens > 0 {
+					completionTokens = chunk.Usage.CompletionTokens
+				}
 			}
 
 			if len(chunk.Choices) == 0 {
@@ -297,8 +306,11 @@ func (p *OpenAIProvider) handleStreamingChat(ctx context.Context, req openai.Cha
 			response.ToolCalls = toolCalls
 		}
 
-		// TTFT/TPOT metrics (only meaningful when streaming)
-		response.Metrics = &ResponseMetrics{}
+		// Metrics: timing (streaming only) + token counts (always)
+		response.Metrics = &ResponseMetrics{
+			PromptTokens:     promptTokens,
+			CompletionTokens: completionTokens,
+		}
 		if !firstContentAt.IsZero() {
 			response.Metrics.TTFTMs = firstContentAt.Sub(start).Milliseconds()
 		}
