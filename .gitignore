@@ -36,3 +36,7 @@ bin/
 # .vscode/
 
 .DS_Store
+
+# SWE-bench Lite dataset (committed as dataset.zip; unzipped in Docker)
+examples/swe_bench_lite/dataset/dev/
+examples/swe_bench_lite/dataset/test/

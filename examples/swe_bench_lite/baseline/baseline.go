@@ -58,7 +58,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("discover instances: %w", err)
 	}
 	if len(paths) == 0 {
-		return fmt.Errorf("no instance JSON files found under %s (run fetch_dataset.py first?)", cfg.DatasetRoot)
+		return fmt.Errorf("no instance JSON files found under %s", cfg.DatasetRoot)
 	}
 	log.Printf("Running %d instances from %s", len(paths), cfg.DatasetRoot)
 
