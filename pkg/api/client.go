@@ -77,23 +77,45 @@ func (c *OrlaClient) RegisterBackend(ctx context.Context, req *RegisterBackendRe
 	return nil
 }
 
+// StructuredOutputRequest requests the model to return content conforming to a JSON Schema.
+type StructuredOutputRequest struct {
+	// Name is the name of the structured output. Required for json_schema response_format.
+	Name string `json:"name"`
+	// Strict is whether the response is guaranteed to conform to the schema.
+	Strict bool `json:"strict,omitempty"`
+	// Schema is the JSON Schema object (e.g. map[string]any or struct). The schema must be valid when set.
+	Schema any `json:"schema"`
+}
+
 // ExecuteRequest represents a request to execute inference on a named backend.
 type ExecuteRequest struct {
-	Backend     string      `json:"backend"`
-	Prompt      string      `json:"prompt,omitempty"`
-	Messages    []Message   `json:"messages,omitempty"`
-	Tools       []*mcp.Tool `json:"tools,omitempty"`
-	MaxTokens   *int        `json:"max_tokens,omitempty"` // nil = backend default
-	Stream      bool        `json:"stream,omitempty"`
-	Temperature *float64    `json:"temperature,omitempty"`
-	TopP        *float64    `json:"top_p,omitempty"`
+	Backend string `json:"backend"`
+	// Prompt is the prompt to execute.
+	Prompt string `json:"prompt,omitempty"`
+	// Messages are the messages to execute.
+	Messages []Message `json:"messages,omitempty"`
+	// Tools are the tools attached to this request.
+	Tools []*mcp.Tool `json:"tools,omitempty"`
+	// MaxTokens is the maximum number of tokens to generate. A nil value means use the backend default.
+	MaxTokens *int `json:"max_tokens,omitempty"`
+	// Stream is whether to stream the response. A nil value means no streaming.
+	Stream bool `json:"stream,omitempty"`
+	// Temperature is the temperature parameter for sampling. A nil value means use the backend default.
+	Temperature *float64 `json:"temperature,omitempty"`
+	// TopP is the nucleus sampling top_p parameter. A nil value means use the backend default.
+	TopP *float64 `json:"top_p,omitempty"`
+	// ResponseFormat is the structured output options. A nil value means no structured output.
+	ResponseFormat *StructuredOutputRequest `json:"response_format,omitempty"`
 }
 
 // ExecuteResponse represents the response from an execute call.
 type ExecuteResponse struct {
-	Success  bool               `json:"success"`
+	// Success is whether the execute call was successful.
+	Success bool `json:"success"`
+	// Response is the response from the execute call.
 	Response *InferenceResponse `json:"response,omitempty"`
-	Error    string             `json:"error,omitempty"`
+	// Error is the error from the execute call, if any.
+	Error string `json:"error,omitempty"`
 }
 
 // Message represents a chat message.

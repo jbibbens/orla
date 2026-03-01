@@ -3,6 +3,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -58,13 +59,26 @@ type Response struct {
 	Metrics   *ResponseMetrics `json:"metrics"`    // Response metrics
 }
 
+// StructuredOutputOptions requests the model to return content conforming to a JSON Schema.
+type StructuredOutputOptions struct {
+	Name   string          `json:"name"`             // Required by OpenAI for json_schema response_format
+	Strict bool            `json:"strict,omitempty"` // If true, response is guaranteed to conform to schema (default true when used)
+	Schema json.RawMessage `json:"schema"`           // JSON Schema object. The schema must be valid when set
+}
+
 // InferenceOptions holds per-request inference settings (agent profile knobs).
 // JSON tags match the execute API so the server can embed this in ExecuteRequest.
 type InferenceOptions struct {
-	Stream      bool     `json:"stream,omitempty"`
-	MaxTokens   *int     `json:"max_tokens,omitempty"`  // nil = backend default
-	Temperature *float64 `json:"temperature,omitempty"` // nil = backend default
-	TopP        *float64 `json:"top_p,omitempty"`       // nil = backend default
+	// Stream is whether to stream the response. A nil value means no streaming.
+	Stream bool `json:"stream,omitempty"`
+	// MaxTokens is the maximum number of tokens to generate. A nil value means use the backend default.
+	MaxTokens *int `json:"max_tokens,omitempty"`
+	// Temperature is the temperature parameter for sampling. A nil value means use the backend default.
+	Temperature *float64 `json:"temperature,omitempty"`
+	// TopP is the nucleus sampling top_p parameter. A nil value means use the backend default.
+	TopP *float64 `json:"top_p,omitempty"`
+	// ResponseFormat is the structured output options. A nil value means no structured output.
+	ResponseFormat *StructuredOutputOptions `json:"response_format,omitempty"`
 }
 
 // Provider is the interface that all model providers must implement

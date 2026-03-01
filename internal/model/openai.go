@@ -134,6 +134,18 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []*
 		req.ToolChoice = "auto" // Let the model decide when to use tools
 	}
 
+	// Structured output (OpenAI, vLLM, SGLang)
+	if opts.ResponseFormat != nil {
+		req.ResponseFormat = &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONSchema,
+			JSONSchema: &openai.ChatCompletionResponseFormatJSONSchema{
+				Name:   opts.ResponseFormat.Name,
+				Strict: opts.ResponseFormat.Strict,
+				Schema: opts.ResponseFormat.Schema,
+			},
+		}
+	}
+
 	if stream {
 		return p.handleStreamingChat(ctx, req)
 	}
