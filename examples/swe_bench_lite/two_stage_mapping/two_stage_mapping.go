@@ -22,15 +22,14 @@ const (
 	lightModelID = "Qwen/Qwen3-4B-Instruct-2507"
 	// Default light backend URL when running two SGLang services (e.g. sglang + sglang-light).
 	defaultLightURL = "http://sglang-light:30000/v1"
-	// Router prompt: model returns prediction true = light, false = heavy.
-	// Biased toward light: most issue-based fixes are localized; reserve heavy for clearly complex cases.
-	routerPromptPrefix = `You are classifying a software engineering task for routing. Default to light (true); only choose heavy (false) when clearly needed.
+	// Router prompt: model returns prediction true = light, false = heavy. Balanced criteria; no default bias.
+	routerPromptPrefix = `You are classifying a software engineering task for routing. Judge based on the task description only.
 
-Choose true (light) for: single-file or few-line fixes, clear bugs (typo, wrong constant, off-by-one), config/test/doc changes, or when the issue points to an obvious file or location. Most GitHub-issue fixes fall in this category—when in doubt, choose light.
+Choose true (light) when the fix is likely: a single file or few lines, a clear bug (typo, wrong constant, off-by-one), config/test/doc tweak, or the issue clearly points to an obvious file or location.
 
-Choose false (heavy) only when you are confident the fix requires: multiple coordinated file changes, architectural or API design changes, or non-obvious root-cause reasoning across the codebase.
+Choose false (heavy) when the fix likely needs: multiple files, unclear root cause, design or API changes, or reasoning across several parts of the codebase.
 
-If the task could plausibly be a small fix, choose true (light). Output prediction: `
+Apply the criteria above; choose the option that best matches the task. Output prediction: `
 )
 
 // Run loads the dataset, registers light and heavy backends, and for each instance:
