@@ -34,6 +34,9 @@ The submitted patch is the git diff of the repository after your edits; Use the 
 	DatasetRoot = "/dataset/test"
 	WorkdirRoot = "/workdir"
 	OutputPath  = "/output/predictions.jsonl"
+
+	// MaxToolOutputBytes caps run_bash stdout/stderr so huge outputs don't blow context.
+	MaxToolOutputBytes = 512
 )
 
 // SWEBenchLiteInstance is one instance from the dataset (instance_id, repo, base_commit, problem_statement).
@@ -201,6 +204,16 @@ func (e *PredictionEncoder) Encode(p Prediction) error {
 	return e.enc.Encode(p)
 }
 
+// truncateForContext truncates s to at most maxBytes and appends a note so context is not blown by huge tool output.
+func truncateForContext(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	suffix := "\n[... output truncated for context ...]"
+	keep := max(maxBytes-len(suffix), 0)
+	return s[:keep] + suffix
+}
+
 // NewBashTool returns a run_bash tool that runs commands in the directory returned by getWorkdir.
 // Pass a function that returns the current instance workdir so the tool runs in the right repo.
 func NewBashTool(getWorkdir func() string) (*orla.Tool, error) {
@@ -237,7 +250,7 @@ func NewBashTool(getWorkdir func() string) (*orla.Tool, error) {
 			cmd := exec.CommandContext(ctx, "bash", "-c", cmdStr)
 			cmd.Dir = workdir
 			out, err := cmd.CombinedOutput()
-			stdout := string(out)
+			stdout := truncateForContext(string(out), MaxToolOutputBytes)
 			stderr := ""
 			exitCode := 0
 			if err != nil {
@@ -245,7 +258,7 @@ func NewBashTool(getWorkdir func() string) (*orla.Tool, error) {
 				if errors.As(err, &exitErr) {
 					exitCode = exitErr.ExitCode()
 				} else {
-					stderr = err.Error()
+					stderr = truncateForContext(err.Error(), MaxToolOutputBytes)
 					exitCode = 1
 				}
 			}
