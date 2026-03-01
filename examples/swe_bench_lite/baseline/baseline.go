@@ -28,6 +28,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 
 	agent := orla.NewAgent(client)
 	stage := orla.NewAgentStage("baseline", backend)
+	stage.SetTemperature(0) // reproducibility
 	var currentWorkdir string
 	bashTool, err := shared.NewBashTool(func() string { return currentWorkdir })
 	if err != nil {

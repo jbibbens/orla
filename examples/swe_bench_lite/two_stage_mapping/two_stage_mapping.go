@@ -56,6 +56,8 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 
 	lightStage := orla.NewAgentStage("light", lightBackend)
 	heavyStage := orla.NewAgentStage("heavy", heavyBackend)
+	lightStage.SetTemperature(0) // reproducibility
+	heavyStage.SetTemperature(0)
 
 	var currentWorkdir string
 	bashTool, bashToolErr := shared.NewBashTool(func() string { return currentWorkdir })
