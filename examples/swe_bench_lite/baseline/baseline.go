@@ -80,6 +80,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 			}
 
 			messages = append(messages, orla.Message{Role: "assistant", Content: resp.Content})
+			shared.LogBashCommandsFromResponse(resp)
 			toolMessages, err := agent.RunToolCallsInResponse(ctx, resp)
 			if err != nil {
 				return fmt.Errorf("step %d run tools: %w", step+1, err)

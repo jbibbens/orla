@@ -275,3 +275,26 @@ func NewBashTool(getWorkdir func() string) (*orla.Tool, error) {
 		}),
 	)
 }
+
+// LogBashCommandsFromResponse logs each run_bash command from the response's tool calls for visibility.
+func LogBashCommandsFromResponse(response *orla.InferenceResponse) {
+	for _, raw := range response.ToolCalls {
+		tc, err := orla.NewToolCallFromRawToolCall(raw)
+		if err != nil {
+			log.Printf("[tool call] error: new tool call from raw tool call: %v", err)
+		}
+		if tc.Name != "run_bash" {
+			log.Printf("[tool call] error: unknown tool: %s", tc.Name)
+		}
+		cmd, ok := tc.InputArguments["command"].(string)
+		if !ok {
+			log.Printf("[tool call] error: command not a string")
+		}
+
+		if cmd == "" {
+			log.Printf("[tool call] error: empty command")
+		}
+
+		log.Printf("[tool call] run_bash: %s", cmd)
+	}
+}
