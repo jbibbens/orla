@@ -356,6 +356,7 @@ const (
 	// maxFormatRetries is how many consecutive format errors we tolerate before stopping.
 	maxFormatRetries = 3
 	// maxRepeatCommands is how many times the model can issue the same command before we nudge it.
+	// After the nudge, if it repeats once more, the instance is stopped.
 	maxRepeatCommands = 3
 
 	formatErrorMsg = `Format error: no bash code block found in your response.
@@ -392,6 +393,7 @@ func RunAgentLoop(ctx context.Context, agent *orla.Agent, messages []orla.Messag
 	formatRetries := 0
 	var lastCmd string
 	repeatCount := 0
+	nudged := false
 	for step := range MaxSteps {
 		log.Printf("step %d: executing", step+1)
 		metrics.BeginStep(step + 1)
@@ -431,12 +433,19 @@ func RunAgentLoop(ctx context.Context, agent *orla.Agent, messages []orla.Messag
 		} else {
 			lastCmd = cmdStr
 			repeatCount = 1
+			nudged = false
 		}
 
 		if repeatCount > maxRepeatCommands {
+			if nudged {
+				metrics.EndStep(step + 1)
+				log.Printf("step %d: command still repeated after nudge, model is stuck — stopping instance", step+1)
+				return nil
+			}
 			log.Printf("step %d: command repeated %d times, injecting nudge", step+1, repeatCount)
 			messages = append(messages, orla.Message{Role: "assistant", Content: content})
 			messages = append(messages, orla.Message{Role: "user", Content: repeatNudgeMsg})
+			nudged = true
 			metrics.EndStep(step + 1)
 			continue
 		}
