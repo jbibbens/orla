@@ -61,14 +61,14 @@ services:
     entrypoint: ["python3", "-m", "sglang.launch_server"]
     command:
       - "--model-path"
-      - "${SGLANG_LIGHT_MODEL:-HuggingFaceTB/SmolLM3-3B}"
+      - "${SGLANG_LIGHT_MODEL:-mistralai/Ministral-3-3B-Instruct-2512}"
       - "--tool-call-parser"
-      - "llama3"
+      - "mistral"
       - "--host"
       - "0.0.0.0"
       - "--port"
       - "30000"
-      # Share GPU with sglang: light model (3B); SmolLM3 has think/no_think, 128K context
+      # Share GPU with sglang: light model (3B); Ministral-3, 256K context, function calling
       - "--mem-fraction-static"
       - "${SGLANG_LIGHT_MEM_FRACTION:-0.35}"
     ulimits:
