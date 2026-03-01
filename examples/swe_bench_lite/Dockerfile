@@ -22,6 +22,7 @@ COPY examples/swe_bench_lite/Makefile /Makefile
 COPY examples/swe_bench_lite/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+ENV PATH="/usr/local/bin:$PATH"
 ENV ORLA_URL=http://orla:8081
 ENV WORKDIR_ROOT=/workdir
 ENV OUTPUT_PATH=/output/predictions.jsonl

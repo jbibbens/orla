@@ -7,12 +7,16 @@ import (
 	"os"
 
 	"github.com/dorcha-inc/orla/examples/swe_bench_lite/baseline"
+	"github.com/dorcha-inc/orla/examples/swe_bench_lite/shared"
 )
 
 func main() {
 	ctx := context.Background()
-	cfg := baseline.DefaultConfig()
-	if err := baseline.Run(ctx, cfg); err != nil {
+	dataset, err := shared.LoadDataset()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := baseline.Run(ctx, dataset); err != nil {
 		log.Fatal(err)
 	}
 	os.Exit(0)

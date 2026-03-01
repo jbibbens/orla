@@ -5,5 +5,4 @@
 ROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo "../..")
 
 baseline:
-	go build -o baseline ./examples/swe_bench_lite/cmd/baseline
 	exec ./baseline
