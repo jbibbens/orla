@@ -87,6 +87,11 @@ type StructuredOutputRequest struct {
 	Schema any `json:"schema"`
 }
 
+// NewStructuredOutputRequest returns a new StructuredOutputRequest.
+func NewStructuredOutputRequest(name string, schema any) *StructuredOutputRequest {
+	return &StructuredOutputRequest{Name: name, Schema: schema}
+}
+
 // ExecuteRequest represents a request to execute inference on a named backend.
 type ExecuteRequest struct {
 	Backend string `json:"backend"`

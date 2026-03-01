@@ -7,76 +7,63 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Agent represents a single agent profile including the backend and inference options.
+// Agent represents a single agent profile. It uses the current Stage for backend, inference options, and tools.
 // Use it for execute calls and pass the prompt per call to Execute or ExecuteStream.
-// Add tools with AddTool so the model can call them when using ExecuteWithMessages
-// or ExecuteStreamWithMessages. Note that this is safe for concurrent use i.e.
-// multiple threads can use the same Agent instance to execute calls.
+// Configure the stage via a.Stage.SetMaxTokens, a.Stage.AddTool, etc., or build an AgentStage and SetStage.
+// Note that this is safe for concurrent use i.e. multiple threads can use the same Agent instance to execute calls.
 type Agent struct {
-	Client  *OrlaClient
-	Backend *LLMBackend
-	// MaxTokens is optional; nil means backend default.
-	MaxTokens *int
-	// Temperature is optional; nil means backend default.
-	Temperature *float64
-	// TopP is optional; nil means backend default.
-	TopP *float64
-	// Tools are the tools attached to this agent.
-	Tools map[string]*Tool
+	Client *OrlaClient
+	// Stage is the current backend, inference options, and tools; used for all execute calls.
+	Stage *AgentStage
 }
 
-// NewAgent returns an agent that uses the given client and backend.
-func NewAgent(client *OrlaClient, backend *LLMBackend) *Agent {
-	tools := make(map[string]*Tool)
-	return &Agent{Client: client, Backend: backend, Tools: tools}
+// NewAgent returns an agent that uses the given client and backend (wrapped in a default stage).
+func NewAgent(client *OrlaClient) *Agent {
+	return &Agent{Client: client}
 }
 
-// SetMaxTokens sets the maximum tokens for execute calls (nil means backend default).
-func (a *Agent) SetMaxTokens(n int) { a.MaxTokens = &n }
+// SetStage sets the current stage. Use this to switch stages.
+func (a *Agent) SetStage(s *AgentStage) { a.Stage = s }
 
-// SetTemperature sets the sampling temperature for execute calls (nil means backend default).
-func (a *Agent) SetTemperature(f float64) { a.Temperature = &f }
-
-// SetTopP sets the nucleus sampling top_p for execute calls (nil means backend default).
-func (a *Agent) SetTopP(f float64) { a.TopP = &f }
-
-// AddTool adds a tool to this agent. The tool spec is sent to the model via the
-// configured LLM backend. Run is invoked locally when the model returns a tool call.
-func (a *Agent) AddTool(t *Tool) error {
-	if t == nil {
-		return fmt.Errorf("tool cannot be nil")
+// req builds a request with a prompt and the current stage's inference options.
+func (a *Agent) req(prompt string) (*ExecuteRequest, error) {
+	if a.Stage == nil {
+		return nil, fmt.Errorf("stage is nil")
 	}
 
-	a.Tools[t.Name] = t
-	return nil
-}
-
-// req builds a request with a prompt and optional inference options.
-func (a *Agent) req(prompt string) *ExecuteRequest {
-	r := &ExecuteRequest{Backend: a.Backend.Name, Prompt: prompt}
-	r.MaxTokens = a.MaxTokens
-	r.Temperature = a.Temperature
-	r.TopP = a.TopP
-	return r
+	s := a.Stage
+	r := &ExecuteRequest{Backend: s.LLMBackend.Name, Prompt: prompt}
+	r.MaxTokens = s.MaxTokens
+	r.Temperature = s.Temperature
+	r.TopP = s.TopP
+	r.ResponseFormat = s.ResponseFormat
+	return r, nil
 }
 
 // reqWithMessages builds a request with existing messages and tools, for agent loops.
-func (a *Agent) reqWithMessages(messages []Message) *ExecuteRequest {
-	r := &ExecuteRequest{Backend: a.Backend.Name, Messages: messages}
-	r.MaxTokens = a.MaxTokens
-	r.Temperature = a.Temperature
-	r.TopP = a.TopP
+func (a *Agent) reqWithMessages(messages []Message) (*ExecuteRequest, error) {
+	if a.Stage == nil {
+		return nil, fmt.Errorf("stage is nil")
+	}
 
-	if len(a.Tools) > 0 {
+	s := a.Stage
+	r := &ExecuteRequest{Backend: s.LLMBackend.Name, Messages: messages}
+	r.MaxTokens = s.MaxTokens
+	r.Temperature = s.Temperature
+	r.TopP = s.TopP
+	r.ResponseFormat = s.ResponseFormat
+
+	if len(a.Stage.Tools) > 0 {
 		r.Tools = a.toolsToMCP()
 	}
 
-	return r
+	return r, nil
 }
 
 func (a *Agent) toolsToMCP() []*mcp.Tool {
-	out := make([]*mcp.Tool, 0, len(a.Tools))
-	for _, t := range a.Tools {
+	tools := a.Stage.Tools
+	out := make([]*mcp.Tool, 0, len(tools))
+	for _, t := range tools {
 		out = append(out, t.toMCP())
 	}
 	return out
@@ -84,23 +71,39 @@ func (a *Agent) toolsToMCP() []*mcp.Tool {
 
 // Execute runs a single non-streaming inference with the given prompt.
 func (a *Agent) Execute(ctx context.Context, prompt string) (*InferenceResponse, error) {
-	return a.Client.Execute(ctx, a.req(prompt))
+	req, err := a.req(prompt)
+	if err != nil {
+		return nil, err
+	}
+	return a.Client.Execute(ctx, req)
 }
 
 // ExecuteStream runs inference with streaming; returns a channel of events (content, thinking, tool_call, done).
 func (a *Agent) ExecuteStream(ctx context.Context, prompt string) (<-chan StreamEvent, error) {
-	return a.Client.ExecuteStream(ctx, a.req(prompt))
+	req, err := a.req(prompt)
+	if err != nil {
+		return nil, err
+	}
+	return a.Client.ExecuteStream(ctx, req)
 }
 
 // ExecuteWithMessages runs a single non-streaming inference with the given message list and any tools attached to the agent.
 // Use this for agent loops: append assistant and tool result messages, then call again until the model returns no tool calls.
 func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []Message) (*InferenceResponse, error) {
-	return a.Client.Execute(ctx, a.reqWithMessages(messages))
+	req, err := a.reqWithMessages(messages)
+	if err != nil {
+		return nil, err
+	}
+	return a.Client.Execute(ctx, req)
 }
 
 // ExecuteStreamWithMessages runs streaming inference with the given message list and any tools attached to the agent.
 func (a *Agent) ExecuteStreamWithMessages(ctx context.Context, messages []Message) (<-chan StreamEvent, error) {
-	return a.Client.ExecuteStream(ctx, a.reqWithMessages(messages))
+	req, err := a.reqWithMessages(messages)
+	if err != nil {
+		return nil, err
+	}
+	return a.Client.ExecuteStream(ctx, req)
 }
 
 // StreamHandler is an optional callback invoked for each stream event (e.g. to print tokens).
@@ -154,7 +157,7 @@ func (a *Agent) RunToolCall(ctx context.Context, toolCall *ToolCall) (*ToolResul
 		return nil, fmt.Errorf("tool call cannot be nil")
 	}
 
-	tool, ok := a.Tools[toolCall.Name]
+	tool, ok := a.Stage.Tools[toolCall.Name]
 	if !ok {
 		return nil, fmt.Errorf("unknown tool %q", toolCall.Name)
 	}

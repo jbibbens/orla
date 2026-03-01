@@ -26,17 +26,17 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		return err
 	}
 
-	agent := orla.NewAgent(client, backend)
-
+	agent := orla.NewAgent(client)
+	stage := orla.NewAgentStage("baseline", backend)
 	var currentWorkdir string
 	bashTool, err := shared.NewBashTool(func() string { return currentWorkdir })
 	if err != nil {
 		return fmt.Errorf("new bash tool: %w", err)
 	}
-
-	if err := agent.AddTool(bashTool); err != nil {
+	if err := stage.AddTool(bashTool); err != nil {
 		return fmt.Errorf("add bash tool: %w", err)
 	}
+	agent.SetStage(stage)
 
 	outFile, err := os.OpenFile(shared.OutputPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
