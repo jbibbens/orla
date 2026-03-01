@@ -108,6 +108,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		}
 
 		log.Printf("instance %s: mapped to stage %s", inst.InstanceID, stage.Name)
+		metrics.SetMappedStage(stage.Name)
 		agent.SetStage(stage)
 
 		messages := shared.PrepareInitialMessages(inst)

@@ -21,13 +21,15 @@ type StepMetrics struct {
 }
 
 // InstanceMetrics is the timing for one SWE-bench instance (all ReAct steps).
+// MappedStage is set by experiments that do stage mapping (e.g. "light", "heavy"); empty for baseline.
 type InstanceMetrics struct {
-	InstanceID string        `json:"instance_id"`
-	StartTime  int64         `json:"start_time_ms"`
-	EndTime    int64         `json:"end_time_ms"`
-	DurationMs int64         `json:"duration_ms"`
-	Steps      []StepMetrics `json:"steps"`
-	StepsCount int           `json:"steps_count"`
+	InstanceID  string        `json:"instance_id"`
+	MappedStage string        `json:"mapped_stage,omitempty"`
+	StartTime   int64         `json:"start_time_ms"`
+	EndTime     int64         `json:"end_time_ms"`
+	DurationMs  int64         `json:"duration_ms"`
+	Steps       []StepMetrics `json:"steps"`
+	StepsCount  int           `json:"steps_count"`
 }
 
 // RunMetrics is the full run: end-to-end time and per-instance (and per-step) timings.
@@ -81,6 +83,14 @@ func (r *RunMetricsRecorder) BeginInstance(instanceID string) {
 	}
 }
 
+// SetMappedStage records the stage chosen for the current instance (e.g. "light", "heavy").
+// Only used by experiments that do stage mapping; call after MapStage and before EndInstance.
+func (r *RunMetricsRecorder) SetMappedStage(stage string) {
+	if r.current != nil {
+		r.current.MappedStage = stage
+	}
+}
+
 // EndInstance ends timing for the current instance. Call after the ReAct loop and before the next instance.
 func (r *RunMetricsRecorder) EndInstance() {
 	if r.current == nil {
@@ -91,7 +101,11 @@ func (r *RunMetricsRecorder) EndInstance() {
 	r.current.DurationMs = r.current.EndTime - r.current.StartTime
 	r.current.StepsCount = len(r.current.Steps)
 
-	log.Printf("[metrics] instance %s: duration=%dms, steps=%d", r.current.InstanceID, r.current.DurationMs, r.current.StepsCount)
+	if r.current.MappedStage != "" {
+		log.Printf("[metrics] instance %s: stage=%s, duration=%dms, steps=%d", r.current.InstanceID, r.current.MappedStage, r.current.DurationMs, r.current.StepsCount)
+	} else {
+		log.Printf("[metrics] instance %s: duration=%dms, steps=%d", r.current.InstanceID, r.current.DurationMs, r.current.StepsCount)
+	}
 
 	r.instances = append(r.instances, *r.current)
 	r.current = nil
