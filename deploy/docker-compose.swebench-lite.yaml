@@ -27,9 +27,9 @@ services:
       - "0.0.0.0"
       - "--port"
       - "30000"
-      # Share GPU with sglang-light: use ~half of VRAM so both fit on one GPU
+      # Share GPU with sglang-light: heavy model needs more for KV cache (8B)
       - "--mem-fraction-static"
-      - "${SGLANG_MEM_FRACTION:-0.48}"
+      - "${SGLANG_MEM_FRACTION:-0.60}"
     ulimits:
       memlock: -1
       stack: 67108864
@@ -68,9 +68,9 @@ services:
       - "0.0.0.0"
       - "--port"
       - "30000"
-      # Share GPU with sglang: use ~half of VRAM so both fit on one GPU
+      # Share GPU with sglang: light model (4B) uses less
       - "--mem-fraction-static"
-      - "${SGLANG_LIGHT_MEM_FRACTION:-0.48}"
+      - "${SGLANG_LIGHT_MEM_FRACTION:-0.35}"
     ulimits:
       memlock: -1
       stack: 67108864
