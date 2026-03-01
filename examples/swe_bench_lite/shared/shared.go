@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -338,7 +339,8 @@ func RunBash(ctx context.Context, workdir, cmdStr string) string {
 	output := truncateForContext(outBuf.String())
 	exitCode := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			if cmdCtx.Err() == context.DeadlineExceeded {
