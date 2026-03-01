@@ -48,6 +48,11 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	enc := shared.NewPredictionEncoder(outFile)
 
 	for i, inst := range dataset.Instances {
+		// TEMPORARY: only run one instance
+		if i > 0 {
+			break
+		}
+
 		absWorkdir, err := shared.PrepareWorkdir(ctx, inst)
 		if err != nil {
 			return fmt.Errorf("prepare workdir: %w", err)
@@ -91,7 +96,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 			patch = p
 		}
 
-		log.Printf("patch: %s", patch)
+		log.Printf("patch: %s", patch[:shared.MaxToolOutputBytes])
 
 		if err := enc.Encode(shared.Prediction{
 			InstanceID:      inst.InstanceID,
