@@ -57,7 +57,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 
 	for i, inst := range dataset.Instances {
 		// TEMPORARY: only run first three instances
-		if i > 3 {
+		if i > 10 {
 			break
 		}
 
@@ -129,4 +129,3 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	log.Printf("Done. Predictions written to %s, metrics to %s", shared.OutputPath, shared.MetricsPath)
 	return nil
 }
-

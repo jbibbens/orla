@@ -1,5 +1,5 @@
 // Package twostagemapping runs the SWE-bench Lite stage-mapping experiment:
-// for each instance, a router (on the heavy model) classifies the task as Light or Heavy,
+// for each instance, a router (on the light model) classifies the task as Light or Heavy,
 // then the main ReAct loop runs on the light model for Light tasks and the heavy model for Heavy tasks.
 package twostagemapping
 
@@ -26,7 +26,7 @@ const (
 )
 
 // Run loads the dataset, registers light and heavy backends, and for each instance:
-// 1) runs the router (heavy model) to get Light or Heavy,
+// 1) runs the router (light model) to get Light or Heavy,
 // 2) runs the ReAct agent loop on the chosen stage (light or heavy model),
 // 3) appends the prediction to shared.OutputPath.
 func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
@@ -70,7 +70,8 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		return fmt.Errorf("add bash tool to heavy stage: %w", err)
 	}
 
-	mapper := orla.NewOneBitStageMapper(client, heavyBackend, lightStage, heavyStage)
+	// Router runs on the light model (simple binary classification); ReAct loop uses light or heavy per instance.
+	mapper := orla.NewOneBitStageMapper(client, lightBackend, lightStage, heavyStage)
 	agent := orla.NewAgent(client)
 
 	outFile, err := os.OpenFile(shared.OutputPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -89,7 +90,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	}()
 
 	for i, inst := range dataset.Instances {
-		if i > 3 {
+		if i > 10 {
 			break
 		}
 
