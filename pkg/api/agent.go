@@ -37,6 +37,7 @@ func (a *Agent) req(prompt string) (*ExecuteRequest, error) {
 	r.Temperature = s.Temperature
 	r.TopP = s.TopP
 	r.ResponseFormat = s.ResponseFormat
+	r.ChatTemplateKwargs = s.ChatTemplateKwargs
 	return r, nil
 }
 
@@ -52,6 +53,7 @@ func (a *Agent) reqWithMessages(messages []Message) (*ExecuteRequest, error) {
 	r.Temperature = s.Temperature
 	r.TopP = s.TopP
 	r.ResponseFormat = s.ResponseFormat
+	r.ChatTemplateKwargs = s.ChatTemplateKwargs
 
 	if len(a.Stage.Tools) > 0 {
 		r.Tools = a.toolsToMCP()

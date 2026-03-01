@@ -123,6 +123,9 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []*
 	if opts.TopP != nil {
 		req.TopP = float32(*opts.TopP)
 	}
+	if len(opts.ChatTemplateKwargs) > 0 {
+		req.ChatTemplateKwargs = opts.ChatTemplateKwargs
+	}
 
 	// Add tools if provided
 	if len(tools) > 0 {

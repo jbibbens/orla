@@ -111,6 +111,8 @@ type ExecuteRequest struct {
 	TopP *float64 `json:"top_p,omitempty"`
 	// ResponseFormat is the structured output options. A nil value means no structured output.
 	ResponseFormat *StructuredOutputRequest `json:"response_format,omitempty"`
+	// ChatTemplateKwargs are extra kwargs passed to the chat template renderer
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 }
 
 // ExecuteResponse represents the response from an execute call.

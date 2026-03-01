@@ -79,6 +79,8 @@ type InferenceOptions struct {
 	TopP *float64 `json:"top_p,omitempty"`
 	// ResponseFormat is the structured output options. A nil value means no structured output.
 	ResponseFormat *StructuredOutputOptions `json:"response_format,omitempty"`
+	// ChatTemplateKwargs are extra kwargs passed to the chat template renderer
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 }
 
 // Provider is the interface that all model providers must implement

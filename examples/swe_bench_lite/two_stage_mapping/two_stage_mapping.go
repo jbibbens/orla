@@ -67,6 +67,8 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	heavyStage.SetTemperature(0)
 	lightStage.SetMaxTokens(shared.MaxOutputTokens)
 	heavyStage.SetMaxTokens(shared.MaxOutputTokens)
+	lightStage.SetChatTemplateKwargs(shared.NoThinking)
+	heavyStage.SetChatTemplateKwargs(shared.NoThinking)
 
 	var currentWorkdir string
 	bashTool, bashToolErr := shared.NewBashTool(func() string { return currentWorkdir })
@@ -137,7 +139,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 				log.Printf("step %d: model finished", step+1)
 				break
 			}
-			messages = append(messages, orla.Message{Role: "assistant", Content: shared.StripThinking(resp.Content)})
+			messages = append(messages, orla.Message{Role: "assistant", Content: resp.Content})
 			shared.LogBashCommandsFromResponse(resp)
 			toolMessages, err := agent.RunToolCallsInResponse(ctx, resp)
 			if err != nil {

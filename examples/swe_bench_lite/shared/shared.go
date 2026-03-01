@@ -58,6 +58,9 @@ Rules:
 	MaxToolOutputBytes = 8192
 )
 
+// NoThinking is a map of extra kwargs for the chat template renderer to disable thinking.
+var NoThinking = map[string]any{"enable_thinking": false}
+
 // SWEBenchLiteInstance is one instance from the dataset (instance_id, repo, base_commit, problem_statement).
 type SWEBenchLiteInstance struct {
 	InstanceID       string `json:"instance_id"`
@@ -296,26 +299,6 @@ func NewBashTool(getWorkdir func() string) (*orla.Tool, error) {
 			return orla.ToolSchema{"stdout": stdout, "stderr": stderr, "exit_code": exitCode}, nil
 		}),
 	)
-}
-
-// StripThinking removes <think>...</think> blocks from model output so they are not fed back
-// into the conversation history. Qwen3's thinking blocks are internal reasoning and should not
-// accumulate in context — they bloat the context window and cause the model to repeat itself.
-func StripThinking(content string) string {
-	s := content
-	for {
-		start := strings.Index(s, "<think>")
-		if start < 0 {
-			break
-		}
-		end := strings.Index(s[start:], "</think>")
-		if end < 0 {
-			s = s[:start]
-			break
-		}
-		s = s[:start] + s[start+end+len("</think>"):]
-	}
-	return strings.TrimSpace(s)
 }
 
 // LogBashCommandsFromResponse logs each run_bash command from the response's tool calls for visibility.

@@ -30,6 +30,8 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	stage := orla.NewAgentStage("baseline", backend)
 	stage.SetTemperature(0)
 	stage.SetMaxTokens(shared.MaxOutputTokens)
+	stage.SetChatTemplateKwargs(shared.NoThinking)
+
 	var currentWorkdir string
 	bashTool, err := shared.NewBashTool(func() string { return currentWorkdir })
 	if err != nil {
@@ -91,7 +93,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 				break
 			}
 
-			messages = append(messages, orla.Message{Role: "assistant", Content: shared.StripThinking(resp.Content)})
+			messages = append(messages, orla.Message{Role: "assistant", Content: resp.Content})
 			shared.LogBashCommandsFromResponse(resp)
 			toolMessages, err := agent.RunToolCallsInResponse(ctx, resp)
 			if err != nil {

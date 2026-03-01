@@ -19,6 +19,8 @@ type AgentStage struct {
 	TopP *float64
 	// ResponseFormat requests structured output (JSON Schema). Nil means no structured output.
 	ResponseFormat *StructuredOutputRequest
+	// ChatTemplateKwargs are extra kwargs passed to the chat template renderer (e.g. SGLang/vLLM).
+	ChatTemplateKwargs map[string]any
 	// Tools are the tools available in this stage (e.g. different stages can expose different tool sets).
 	Tools map[string]*Tool
 }
@@ -39,6 +41,9 @@ func (s *AgentStage) SetTopP(f float64) { s.TopP = &f }
 
 // SetResponseFormat sets the structured output (JSON Schema) for execute calls. Use nil to disable.
 func (s *AgentStage) SetResponseFormat(r *StructuredOutputRequest) { s.ResponseFormat = r }
+
+// SetChatTemplateKwargs sets extra kwargs for the chat template renderer
+func (s *AgentStage) SetChatTemplateKwargs(kwargs map[string]any) { s.ChatTemplateKwargs = kwargs }
 
 // AddTool adds a tool to this stage. Returns an error if t is nil.
 func (s *AgentStage) AddTool(t *Tool) error {
