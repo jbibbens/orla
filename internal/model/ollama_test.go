@@ -380,6 +380,31 @@ func TestOllamaProvider_Chat_EnsureReadyFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "is not responding")
 }
 
+func TestOllamaProvider_Chat_ResponseFormatUnsupported(t *testing.T) {
+	cfg := &config.OrlaConfig{}
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	messages := []Message{{Role: MessageRoleUser, Content: "test"}}
+	opts := InferenceOptions{
+		Stream: false,
+		ResponseFormat: &StructuredOutputOptions{
+			Name:   "test",
+			Strict: true,
+			Schema: json.RawMessage(`{"type":"object"}`),
+		},
+	}
+
+	response, streamCh, err := provider.Chat(ctx, messages, nil, opts)
+	require.Error(t, err)
+	assert.Nil(t, response)
+	assert.Nil(t, streamCh)
+	assert.Contains(t, err.Error(), "structured output")
+	assert.Contains(t, err.Error(), "not currently supported")
+	assert.Contains(t, err.Error(), "ollama")
+}
+
 func TestOllamaProvider_Chat_HTTPError(t *testing.T) {
 	// Test Chat when HTTP request fails
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

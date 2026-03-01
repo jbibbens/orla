@@ -721,7 +721,8 @@ func TestOpenAIProvider_Chat_WithoutResponseFormat_RequestOmitsResponseFormat(t 
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		err = json.NewEncoder(w).Encode(resp)
+		require.NoError(t, err)
 	}))
 	t.Cleanup(srv.Close)
 

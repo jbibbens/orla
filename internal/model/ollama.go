@@ -116,6 +116,10 @@ func (p *OllamaProvider) EnsureReady(ctx context.Context) error {
 
 // Chat sends a chat request to Ollama
 func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error) {
+	// TODO(jadidbourbaki): implement structured output for ollama
+	if opts.ResponseFormat != nil {
+		return nil, nil, fmt.Errorf("structured output (response_format) is not currently supported by the ollama provider; use an OpenAI-compatible backend for structured output")
+	}
 	stream := opts.Stream
 	var maxTokens int
 	if opts.MaxTokens != nil {
