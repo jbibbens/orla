@@ -61,14 +61,14 @@ services:
     entrypoint: ["python3", "-m", "sglang.launch_server"]
     command:
       - "--model-path"
-      - "${SGLANG_LIGHT_MODEL:-mistralai/Ministral-3-3B-Instruct-2512}"
+      - "${SGLANG_LIGHT_MODEL:-Qwen/Qwen2.5-3B-Instruct}"
       - "--tool-call-parser"
-      - "mistral"
+      - "qwen"
       - "--host"
       - "0.0.0.0"
       - "--port"
       - "30000"
-      # Share GPU with sglang: light model (3B); Ministral-3, 256K context, function calling
+      # Share GPU with sglang: light model (3B); Qwen2.5 has no thinking mode
       - "--mem-fraction-static"
       - "${SGLANG_LIGHT_MEM_FRACTION:-0.35}"
     ulimits:

@@ -18,7 +18,7 @@ import (
 const (
 	// Default heavy (8B) and light (3B) model IDs for stage mapping.
 	heavyModelID = "Qwen/Qwen3-8B"
-	lightModelID = "mistralai/Ministral-3-3B-Instruct-2512"
+	lightModelID = "Qwen/Qwen2.5-3B-Instruct"
 	// Default light backend URL when running two SGLang services (e.g. sglang + sglang-light).
 	defaultLightURL = "http://sglang-light:30000/v1"
 	// Router prompt: model returns prediction true = light, false = heavy.
