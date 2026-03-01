@@ -21,25 +21,44 @@ import (
 )
 
 const (
-	// DefaultSystemPrompt is the default system message for SWE-bench agent runs.
-	DefaultSystemPrompt = `You are a software engineering agent. You have one tool: run_bash. You are already in the repository root with the base commit checked out.
+	// DefaultSystemPrompt is the system message for SWE-bench agent runs.
+	// Modeled after mini-swe-agent: one bash tool, step-by-step workflow, concrete editing examples.
+	DefaultSystemPrompt = `You are a software engineering agent that fixes bugs in Python repositories.
+You have one tool: run_bash. You are already in the repository root.
 
-Follow this workflow:
-1. FIND: Use grep -rn or find to locate the relevant file(s). Then use cat or sed -n to read the specific lines you need to change.
-2. EDIT: Make the change. Prefer a Python one-liner or heredoc over sed for multi-line or complex edits:
-   python3 -c "
-   import pathlib; p = pathlib.Path('file.py'); t = p.read_text()
-   t = t.replace('old_code', 'new_code'); p.write_text(t)"
-   sed -i works for simple single-line substitutions, but note: sed -i returns exit code 0 even if the pattern did not match—always verify.
-3. VERIFY: Run git diff to confirm your edit. If git diff is empty, your edit did not apply—re-read the file to check the exact text, then retry with corrected arguments.
+## Workflow (follow step by step)
 
-Rules:
-- Call run_bash with the "command" argument for every action. Do not write commands in code blocks.
+1. EXPLORE: Find and read the relevant code.
+   Example: grep -rn 'function_name' src/
+   Example: nl -ba src/module.py | sed -n '100,120p'
+
+2. REPRODUCE: Write a small script that triggers the bug, then run it to confirm.
+   Example: python3 -c "from module import func; print(func(bad_input))"
+
+3. EDIT: Fix the source code. Use ONE of these methods:
+   a) sed for simple substitutions (one line):
+      sed -i 's/old_text/new_text/' path/to/file.py
+   b) python3 for anything more complex:
+      python3 -c "
+      import pathlib; p = pathlib.Path('path/to/file.py'); t = p.read_text()
+      t = t.replace('old_code', 'new_code'); p.write_text(t)"
+   c) heredoc to create or overwrite a file:
+      cat <<'EOF' > path/to/file.py
+      new file contents
+      EOF
+
+4. VERIFY: Run git diff to confirm your edit applied. If empty, your edit did not match—re-read the file and retry.
+
+5. TEST: Run your reproduction script again to confirm the fix works.
+
+## Rules
+- Call run_bash for every action. Do not write commands in markdown code blocks.
 - Do not run git clone or git checkout.
 - Keep edits minimal and targeted.
 - The submitted patch is the git diff after your edits.`
-	// MaxSteps is the default cap on ReAct steps per instance.
-	MaxSteps        = 256
+
+	// MaxSteps caps ReAct steps per instance. 50 is the practical ceiling — returns diminish after that.
+	MaxSteps        = 50
 	MaxOutputTokens = 4096
 
 	MaxIterations = 10
@@ -54,8 +73,8 @@ Rules:
 	MetricsPath = "/output/metrics.json"
 
 	// MaxToolOutputBytes caps run_bash stdout/stderr so huge outputs don't blow context.
-	// 8KB gives the model enough to read meaningful code while staying within context limits.
-	MaxToolOutputBytes = 8192
+	// 10KB gives the model enough to read meaningful code while staying within context limits.
+	MaxToolOutputBytes = 10240
 )
 
 // NoThinking is a map of extra kwargs for the chat template renderer to disable thinking.
@@ -299,6 +318,36 @@ func NewBashTool(getWorkdir func() string) (*orla.Tool, error) {
 			return orla.ToolSchema{"stdout": stdout, "stderr": stderr, "exit_code": exitCode}, nil
 		}),
 	)
+}
+
+// RunAgentLoop runs the ReAct loop for a single instance: execute, log, run tools, repeat.
+func RunAgentLoop(ctx context.Context, agent *orla.Agent, messages []orla.Message, metrics *RunMetricsRecorder) error {
+	for step := range MaxSteps {
+		log.Printf("step %d: executing", step+1)
+		metrics.BeginStep(step + 1)
+		resp, err := agent.ExecuteWithMessages(ctx, messages)
+		if err != nil {
+			return fmt.Errorf("step %d execute: %w", step+1, err)
+		}
+		log.Printf("step %d: response: %s", step+1, resp.Content)
+		if len(resp.ToolCalls) == 0 {
+			metrics.EndStep(step + 1)
+			log.Printf("step %d: model finished", step+1)
+			return nil
+		}
+		messages = append(messages, orla.Message{Role: "assistant", Content: resp.Content})
+		LogBashCommandsFromResponse(resp)
+		toolMessages, err := agent.RunToolCallsInResponse(ctx, resp)
+		if err != nil {
+			return fmt.Errorf("step %d run tools: %w", step+1, err)
+		}
+		metrics.EndStep(step + 1)
+		for _, m := range toolMessages {
+			log.Printf("step %d: tool message: %s", step+1, m.Content)
+			messages = append(messages, *m)
+		}
+	}
+	return nil
 }
 
 // LogBashCommandsFromResponse logs each run_bash command from the response's tool calls for visibility.

@@ -28,7 +28,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 
 	agent := orla.NewAgent(client)
 	stage := orla.NewAgentStage("baseline", backend)
-	stage.SetTemperature(0)
+	stage.SetTemperature(0.7)
 	stage.SetMaxTokens(shared.MaxOutputTokens)
 	stage.SetChatTemplateKwargs(shared.NoThinking)
 
@@ -74,37 +74,8 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		metrics.BeginInstance(inst.InstanceID)
 
 		messages := shared.PrepareInitialMessages(inst)
-
-		for step := range shared.MaxSteps {
-			log.Printf("step %d: executing", step+1)
-			metrics.BeginStep(step + 1)
-
-			resp, err := agent.ExecuteWithMessages(ctx, messages)
-
-			if err != nil {
-				return fmt.Errorf("step %d execute: %w", step+1, err)
-			}
-
-			log.Printf("step %d: response: %s", step+1, resp.Content)
-
-			if len(resp.ToolCalls) == 0 {
-				metrics.EndStep(step + 1)
-				log.Printf("step %d: model finished", step+1)
-				break
-			}
-
-			messages = append(messages, orla.Message{Role: "assistant", Content: resp.Content})
-			shared.LogBashCommandsFromResponse(resp)
-			toolMessages, err := agent.RunToolCallsInResponse(ctx, resp)
-			if err != nil {
-				return fmt.Errorf("step %d run tools: %w", step+1, err)
-			}
-
-			metrics.EndStep(step + 1)
-			for _, m := range toolMessages {
-				log.Printf("step %d: tool message: %s", step+1, m.Content)
-				messages = append(messages, *m)
-			}
+		if err := shared.RunAgentLoop(ctx, agent, messages, metrics); err != nil {
+			return fmt.Errorf("instance %s: %w", inst.InstanceID, err)
 		}
 
 		metrics.EndInstance()
