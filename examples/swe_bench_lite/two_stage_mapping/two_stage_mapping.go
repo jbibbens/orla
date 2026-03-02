@@ -148,11 +148,14 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 			log.Printf("patch: %s", patch)
 		}
 		encMu.Lock()
-		_ = enc.Encode(shared.Prediction{
+		err = enc.Encode(shared.Prediction{
 			InstanceID:      inst.InstanceID,
 			ModelNameOrPath: "orla-two-stage",
 			ModelPatch:      patch,
 		})
+		if err != nil {
+			log.Printf("warning: encode prediction %s: %v", inst.InstanceID, err)
+		}
 		encMu.Unlock()
 	}
 
