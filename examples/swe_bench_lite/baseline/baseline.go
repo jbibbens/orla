@@ -26,12 +26,11 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		return err
 	}
 
-	agent := orla.NewAgent(client)
-	stage := orla.NewAgentStage("baseline", backend)
+	stage := orla.NewStage("baseline", backend)
+	stage.Client = client
 	stage.SetTemperature(0.7)
 	stage.SetMaxTokens(shared.MaxOutputTokens)
 	stage.SetChatTemplateKwargs(shared.NoThinking)
-	agent.SetStage(stage)
 
 	var currentWorkdir string
 
@@ -67,7 +66,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		metrics.BeginInstance(inst.InstanceID)
 
 		messages := shared.PrepareInitialMessages(inst)
-		if err := shared.RunAgentLoop(ctx, agent, messages, metrics, func() string { return currentWorkdir }); err != nil {
+		if err := shared.RunAgentLoop(ctx, stage, messages, metrics, func() string { return currentWorkdir }); err != nil {
 			return fmt.Errorf("instance %s: %w", inst.InstanceID, err)
 		}
 

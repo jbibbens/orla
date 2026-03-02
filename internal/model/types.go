@@ -63,14 +63,24 @@ type ResponseMetrics struct {
 	BackendLatencyMs int64 `json:"backend_latency_ms,omitempty"`
 }
 
-// SchedulingPolicy controls how the server dequeues requests for each backend.
+// SchedulingPolicy controls how the server picks the next stage queue on a backend.
 type SchedulingPolicy string
 
 const (
-	// SchedulingPolicyFCFS is first-come-first-served scheduling.
+	// SchedulingPolicyFCFS is first-come-first-served stage scheduling.
 	SchedulingPolicyFCFS SchedulingPolicy = "fcfs"
-	// SchedulingPolicyPriority prioritizes stage heads with higher priority values.
+	// SchedulingPolicyPriority picks the stage with the highest-priority head request.
 	SchedulingPolicyPriority SchedulingPolicy = "priority"
+)
+
+// RequestSchedulingPolicy controls how requests within a single stage queue are ordered.
+type RequestSchedulingPolicy string
+
+const (
+	// RequestSchedulingPolicyFIFO processes requests in arrival order (default).
+	RequestSchedulingPolicyFIFO RequestSchedulingPolicy = "fifo"
+	// RequestSchedulingPolicyPriority processes the highest-priority request first.
+	RequestSchedulingPolicyPriority RequestSchedulingPolicy = "priority"
 )
 
 // SchedulingHints are optional policy-specific hints attached to an inference request.
@@ -117,8 +127,10 @@ type InferenceOptions struct {
 	ResponseFormat *StructuredOutputOptions `json:"response_format,omitempty"`
 	// ChatTemplateKwargs are extra kwargs passed to the chat template renderer
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
-	// SchedulingPolicy selects backend queue scheduling behavior.
+	// SchedulingPolicy selects stage-level backend queue scheduling behavior.
 	SchedulingPolicy SchedulingPolicy `json:"scheduling_policy,omitempty"`
+	// RequestSchedulingPolicy selects request-level ordering within a stage queue.
+	RequestSchedulingPolicy RequestSchedulingPolicy `json:"request_scheduling_policy,omitempty"`
 	// SchedulingHints are optional policy hints for backend queueing.
 	SchedulingHints *SchedulingHints `json:"scheduling_hints,omitempty"`
 }

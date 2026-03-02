@@ -100,6 +100,27 @@ func TestServer_HandleExecute_InvalidSchedulingPolicy(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.Code)
 }
 
+func TestServer_HandleExecute_InvalidRequestSchedulingPolicy(t *testing.T) {
+	layer := serving.NewAgenticLayer()
+	server := NewAgenticServer(layer, ":0")
+
+	reqBody := ExecuteRequest{
+		Backend: "nonexistent",
+		Prompt:  "test prompt",
+		InferenceOptions: model.InferenceOptions{
+			RequestSchedulingPolicy: "not_supported",
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader(body))
+	server.mux.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+}
+
 func TestServer_HandleRegisterBackend(t *testing.T) {
 	layer := serving.NewAgenticLayer()
 	server := NewAgenticServer(layer, ":0")

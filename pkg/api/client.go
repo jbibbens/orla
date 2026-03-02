@@ -95,8 +95,8 @@ func NewStructuredOutputRequest(name string, schema any) *StructuredOutputReques
 // ExecuteRequest represents a request to execute inference on a named backend.
 type ExecuteRequest struct {
 	Backend string `json:"backend"`
-	// Stage is the stage name associated with this request. If unset, server uses default stage queue.
-	Stage string `json:"stage,omitempty"`
+	// StageID is the globally unique stage ID for this request.
+	StageID string `json:"stage_id,omitempty"`
 	// Prompt is the prompt to execute.
 	Prompt string `json:"prompt,omitempty"`
 	// Messages are the messages to execute.
@@ -115,10 +115,17 @@ type ExecuteRequest struct {
 	ResponseFormat *StructuredOutputRequest `json:"response_format,omitempty"`
 	// ChatTemplateKwargs are extra kwargs passed to the chat template renderer
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
-	// SchedulingPolicy selects server-side queue scheduling policy.
+	// SchedulingPolicy selects stage-level server-side queue scheduling policy.
 	SchedulingPolicy string `json:"scheduling_policy,omitempty"`
+	// RequestSchedulingPolicy selects request-level ordering within a stage queue.
+	RequestSchedulingPolicy string `json:"request_scheduling_policy,omitempty"`
 	// SchedulingHints are optional policy hints attached to the request.
 	SchedulingHints *SchedulingHints `json:"scheduling_hints,omitempty"`
+}
+
+// GetStageID returns the stage ID for this request.
+func (r *ExecuteRequest) GetStageID() string {
+	return r.StageID
 }
 
 const (

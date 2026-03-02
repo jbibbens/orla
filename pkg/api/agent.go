@@ -3,221 +3,285 @@ package orla
 import (
 	"context"
 	"fmt"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"maps"
+	"sync"
 )
 
-// Agent represents a single agent profile. It uses the current Stage for backend, inference options, and tools.
-// Use it for execute calls and pass the prompt per call to Execute or ExecuteStream.
-// Configure the stage via a.Stage.SetMaxTokens, a.Stage.AddTool, etc., or build an AgentStage and SetStage.
-// Note that this is safe for concurrent use i.e. multiple threads can use the same Agent instance to execute calls.
+// Agent owns a DAG of Stages. Use AddStage and AddDependency to build
+// the DAG, then ExecuteDAG to run it.
 type Agent struct {
 	Client *OrlaClient
-	// Stage is the current backend, inference options, and tools; used for all execute calls.
-	Stage *AgentStage
+	Name   string
+
+	stages       map[string]*Stage
+	dependencies map[string][]string // stageID -> depends on []stageID
 }
 
-// NewAgent returns an agent that uses the given client and backend (wrapped in a default stage).
+// NewAgent returns an agent bound to the given client.
 func NewAgent(client *OrlaClient) *Agent {
-	return &Agent{Client: client}
+	return &Agent{
+		Client:       client,
+		stages:       make(map[string]*Stage),
+		dependencies: make(map[string][]string),
+	}
 }
 
-// SetStage sets the current stage. Use this to switch stages.
-func (a *Agent) SetStage(s *AgentStage) { a.Stage = s }
-
-// req builds a request with a prompt and the current stage's inference options.
-func (a *Agent) req(prompt string) (*ExecuteRequest, error) {
-	if a.Stage == nil {
-		return nil, fmt.Errorf("stage is nil")
+// AddStage registers a stage in the agent's DAG. Sets stage.Client automatically.
+func (a *Agent) AddStage(s *Stage) error {
+	if s == nil {
+		return fmt.Errorf("stage cannot be nil")
 	}
-
-	s := a.Stage
-	r := &ExecuteRequest{Backend: s.LLMBackend.Name, Stage: s.Name, Prompt: prompt}
-	r.MaxTokens = s.MaxTokens
-	r.Temperature = s.Temperature
-	r.TopP = s.TopP
-	r.ResponseFormat = s.ResponseFormat
-	r.ChatTemplateKwargs = s.ChatTemplateKwargs
-	r.SchedulingPolicy = s.SchedulingPolicy
-	r.SchedulingHints = s.SchedulingHints
-	return r, nil
+	if s.ID == "" {
+		return fmt.Errorf("stage id is required")
+	}
+	if _, exists := a.stages[s.ID]; exists {
+		return fmt.Errorf("stage %q already exists", s.ID)
+	}
+	s.Client = a.Client
+	a.stages[s.ID] = s
+	return nil
 }
 
-// reqWithMessages builds a request with existing messages and tools, for agent loops.
-func (a *Agent) reqWithMessages(messages []Message) (*ExecuteRequest, error) {
-	if a.Stage == nil {
-		return nil, fmt.Errorf("stage is nil")
+// AddDependency declares that stageID depends on dependsOnStageID (must finish before stageID starts).
+func (a *Agent) AddDependency(stageID, dependsOnStageID string) error {
+	if _, ok := a.stages[stageID]; !ok {
+		return fmt.Errorf("stage %q not found", stageID)
 	}
-
-	s := a.Stage
-	r := &ExecuteRequest{Backend: s.LLMBackend.Name, Stage: s.Name, Messages: messages}
-	r.MaxTokens = s.MaxTokens
-	r.Temperature = s.Temperature
-	r.TopP = s.TopP
-	r.ResponseFormat = s.ResponseFormat
-	r.ChatTemplateKwargs = s.ChatTemplateKwargs
-	r.SchedulingPolicy = s.SchedulingPolicy
-	r.SchedulingHints = s.SchedulingHints
-
-	if len(a.Stage.Tools) > 0 {
-		r.Tools = a.toolsToMCP()
+	if _, ok := a.stages[dependsOnStageID]; !ok {
+		return fmt.Errorf("dependency stage %q not found", dependsOnStageID)
 	}
-
-	return r, nil
+	a.dependencies[stageID] = append(a.dependencies[stageID], dependsOnStageID)
+	return nil
 }
 
-func (a *Agent) toolsToMCP() []*mcp.Tool {
-	tools := a.Stage.Tools
-	out := make([]*mcp.Tool, 0, len(tools))
-	for _, t := range tools {
-		out = append(out, t.toMCP())
-	}
+// Stages returns all DAG stages keyed by ID.
+func (a *Agent) Stages() map[string]*Stage {
+	out := make(map[string]*Stage, len(a.stages))
+	maps.Copy(out, a.stages)
 	return out
 }
 
-// Execute runs a single non-streaming inference with the given prompt.
-func (a *Agent) Execute(ctx context.Context, prompt string) (*InferenceResponse, error) {
-	req, err := a.req(prompt)
-	if err != nil {
-		return nil, err
+// ExecuteDAG runs the agent's stage DAG with dependency-aware scheduling.
+// Independent stages execute concurrently; context is passed between stages via PromptBuilder/MessagesBuilder.
+// Returns results keyed by stage ID.
+func (a *Agent) ExecuteDAG(ctx context.Context) (map[string]*StageResult, error) {
+	if len(a.stages) == 0 {
+		return nil, fmt.Errorf("agent %q has no stages", a.Name)
 	}
-	return a.Client.Execute(ctx, req)
-}
 
-// ExecuteStream runs inference with streaming; returns a channel of events (content, thinking, tool_call, done).
-func (a *Agent) ExecuteStream(ctx context.Context, prompt string) (<-chan StreamEvent, error) {
-	req, err := a.req(prompt)
-	if err != nil {
-		return nil, err
+	for id, deps := range a.dependencies {
+		for _, depID := range deps {
+			if _, ok := a.stages[depID]; !ok {
+				return nil, fmt.Errorf("stage %q depends on unknown stage %q", id, depID)
+			}
+		}
 	}
-	return a.Client.ExecuteStream(ctx, req)
-}
 
-// ExecuteWithMessages runs a single non-streaming inference with the given message list and any tools attached to the agent.
-// Use this for agent loops: append assistant and tool result messages, then call again until the model returns no tool calls.
-func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []Message) (*InferenceResponse, error) {
-	req, err := a.reqWithMessages(messages)
-	if err != nil {
-		return nil, err
+	dependents := make(map[string][]string, len(a.stages))
+	remainingDeps := make(map[string]int, len(a.stages))
+	for id := range a.stages {
+		for _, depID := range a.dependencies[id] {
+			dependents[depID] = append(dependents[depID], id)
+		}
+		remainingDeps[id] = len(a.dependencies[id])
 	}
-	return a.Client.Execute(ctx, req)
-}
 
-// ExecuteStreamWithMessages runs streaming inference with the given message list and any tools attached to the agent.
-func (a *Agent) ExecuteStreamWithMessages(ctx context.Context, messages []Message) (<-chan StreamEvent, error) {
-	req, err := a.reqWithMessages(messages)
-	if err != nil {
-		return nil, err
+	results := make(map[string]*StageResult, len(a.stages))
+	var resultsMu sync.RWMutex
+	var remainingMu sync.Mutex
+
+	type nodeOutcome struct {
+		id        string
+		err       error
+		unblocked []string
 	}
-	return a.Client.ExecuteStream(ctx, req)
-}
 
-// StreamHandler is an optional callback invoked for each stream event (e.g. to print tokens).
-// ConsumeStream always accumulates and returns the full InferenceResponse; the handler is for side effects only.
-type StreamHandler func(event StreamEvent) error
+	outcomeCh := make(chan nodeOutcome, len(a.stages))
+	readyCh := make(chan string, len(a.stages))
 
-// ConsumeStream reads the stream until "done", accumulates content/thinking/metrics, and returns the result.
-// If streamHandler is non-nil, it is called for each event before processing (e.g. to print content as it arrives).
-func (a *Agent) ConsumeStream(ctx context.Context, stream <-chan StreamEvent, handler StreamHandler) (*InferenceResponse, error) {
-	response := &InferenceResponse{Metrics: &InferenceResponseMetrics{}}
+	startStage := func(stageID string) {
+		go func() {
+			stage := a.stages[stageID]
+
+			resultsMu.RLock()
+			depSnapshot := make(map[string]*StageResult, len(results))
+			maps.Copy(depSnapshot, results)
+			resultsMu.RUnlock()
+
+			result, err := a.executeStageInDAG(ctx, stage, depSnapshot)
+			if err != nil {
+				outcomeCh <- nodeOutcome{id: stageID, err: fmt.Errorf("stage %q: %w", stageID, err)}
+				return
+			}
+
+			resultsMu.Lock()
+			results[stageID] = result
+			resultsMu.Unlock()
+
+			remainingMu.Lock()
+			var unblocked []string
+			for _, dep := range dependents[stageID] {
+				remainingDeps[dep]--
+				if remainingDeps[dep] == 0 {
+					unblocked = append(unblocked, dep)
+				}
+			}
+			remainingMu.Unlock()
+
+			outcomeCh <- nodeOutcome{id: stageID, unblocked: unblocked}
+		}()
+	}
+
+	remainingMu.Lock()
+	for id, deps := range remainingDeps {
+		if deps == 0 {
+			readyCh <- id
+		}
+	}
+	remainingMu.Unlock()
+
+	dispatched := 0
+	completed := 0
 	for {
+		for {
+			select {
+			case stageID := <-readyCh:
+				startStage(stageID)
+				dispatched++
+			default:
+				goto waitOutcome
+			}
+		}
+
+	waitOutcome:
+		if completed == len(a.stages) {
+			break
+		}
+		if dispatched == completed {
+			select {
+			case stageID := <-readyCh:
+				startStage(stageID)
+				dispatched++
+				continue
+			default:
+				return nil, fmt.Errorf("agent %q: stage DAG has a cycle; completed %d/%d stages", a.Name, completed, len(a.stages))
+			}
+		}
+
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case event, ok := <-stream:
-			if !ok {
-				if ctx.Err() != nil {
-					return nil, ctx.Err()
-				}
-				return nil, fmt.Errorf("stream closed without done")
+		case outcome := <-outcomeCh:
+			if outcome.err != nil {
+				return nil, outcome.err
 			}
-			if handler != nil {
-				if err := handler(event); err != nil {
-					return nil, err
-				}
-			}
-			switch event.Type {
-			case "content":
-				response.Content += event.Content
-			case "thinking":
-				response.Thinking += event.Thinking
-			case "tool_call":
-				// Streaming tool_call deltas are for display; final ToolCalls come in "done"
-			case "done":
-				if event.Response != nil {
-					response.Content = event.Response.Content
-					response.Thinking = event.Response.Thinking
-					response.ToolCalls = event.Response.ToolCalls
-					if event.Response.Metrics != nil {
-						response.Metrics = event.Response.Metrics
-					}
-				}
-				return response, nil
+			completed++
+			for _, next := range outcome.unblocked {
+				readyCh <- next
 			}
 		}
 	}
+
+	if dispatched != len(a.stages) {
+		return nil, fmt.Errorf("agent %q: stage DAG has a cycle; dispatched %d/%d stages", a.Name, dispatched, len(a.stages))
+	}
+	return results, nil
 }
 
-func (a *Agent) RunToolCall(ctx context.Context, toolCall *ToolCall) (*ToolResult, error) {
-	if toolCall == nil {
-		return nil, fmt.Errorf("tool call cannot be nil")
+const defaultMaxAgentLoopTurns = 100
+
+func (a *Agent) executeStageInDAG(ctx context.Context, stage *Stage, depResults map[string]*StageResult) (*StageResult, error) {
+	switch stage.ExecutionMode {
+	case ExecutionModeAgentLoop:
+		return a.executeAgentLoopStage(ctx, stage, depResults)
+	default:
+		return a.executeSingleShotStage(ctx, stage, depResults)
+	}
+}
+
+func (a *Agent) executeSingleShotStage(ctx context.Context, stage *Stage, depResults map[string]*StageResult) (*StageResult, error) {
+	if stage.MessagesBuilder != nil {
+		msgs, err := stage.MessagesBuilder(depResults)
+		if err != nil {
+			return nil, fmt.Errorf("messages builder: %w", err)
+		}
+		resp, err := stage.ExecuteWithMessages(ctx, msgs)
+		if err != nil {
+			return nil, err
+		}
+		return &StageResult{Response: resp, Messages: msgs}, nil
 	}
 
-	tool, ok := a.Stage.Tools[toolCall.Name]
-	if !ok {
-		return nil, fmt.Errorf("unknown tool %q", toolCall.Name)
+	prompt := stage.Prompt
+	if stage.PromptBuilder != nil {
+		built, err := stage.PromptBuilder(depResults)
+		if err != nil {
+			return nil, fmt.Errorf("prompt builder: %w", err)
+		}
+		prompt = built
 	}
-
-	toolResult, err := tool.Run(ctx, toolCall.InputArguments)
-
+	if prompt == "" {
+		return nil, fmt.Errorf("prompt is empty")
+	}
+	resp, err := stage.Execute(ctx, prompt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run tool call: %w", err)
+		return nil, err
 	}
-
-	if toolResult == nil {
-		return nil, fmt.Errorf("tool result is nil")
-	}
-
-	toolResult.ID = toolCall.ID
-	toolResult.Name = toolCall.Name
-
-	return toolResult, nil
+	return &StageResult{Response: resp}, nil
 }
 
-// RunToolCallsInResponseAndGetToolResults parses the response's tool calls, runs each tool by name, and returns results.
-func (a *Agent) RunToolCallsInResponseAndGetToolResults(ctx context.Context, response *InferenceResponse) ([]*ToolResult, error) {
-	toolResults := make([]*ToolResult, 0, len(response.ToolCalls))
+func (a *Agent) executeAgentLoopStage(ctx context.Context, stage *Stage, depResults map[string]*StageResult) (*StageResult, error) {
+	var messages []Message
 
-	for _, call := range response.ToolCalls {
-		toolCall, err := NewToolCallFromRawToolCall(call)
+	if stage.MessagesBuilder != nil {
+		msgs, err := stage.MessagesBuilder(depResults)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse tool call: %w", err)
+			return nil, fmt.Errorf("messages builder: %w", err)
 		}
-
-		toolResult, err := a.RunToolCall(ctx, toolCall)
-		if err != nil {
-			return nil, fmt.Errorf("failed to run tool call: %w", err)
+		messages = msgs
+	} else {
+		prompt := stage.Prompt
+		if stage.PromptBuilder != nil {
+			built, err := stage.PromptBuilder(depResults)
+			if err != nil {
+				return nil, fmt.Errorf("prompt builder: %w", err)
+			}
+			prompt = built
 		}
-		toolResults = append(toolResults, toolResult)
-	}
-	return toolResults, nil
-}
-
-// RunToolCallsInResponse runs the tool calls in the response and returns the tool result messages.
-func (a *Agent) RunToolCallsInResponse(ctx context.Context, response *InferenceResponse) ([]*Message, error) {
-	toolResults, err := a.RunToolCallsInResponseAndGetToolResults(ctx, response)
-	if err != nil {
-		return nil, fmt.Errorf("failed to run tool calls: %w", err)
+		if prompt == "" {
+			return nil, fmt.Errorf("prompt is empty")
+		}
+		messages = []Message{{Role: "user", Content: prompt}}
 	}
 
-	toolMessages := make([]*Message, 0, len(toolResults))
-	for _, toolResult := range toolResults {
-		toolMessage, err := toolResult.ToMessage()
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert tool result to message: %w", err)
-		}
-		toolMessages = append(toolMessages, toolMessage)
+	maxTurns := stage.MaxTurns
+	if maxTurns <= 0 {
+		maxTurns = defaultMaxAgentLoopTurns
 	}
 
-	return toolMessages, nil
+	var lastResp *InferenceResponse
+	for turn := range maxTurns {
+		_ = turn
+		resp, err := stage.ExecuteWithMessages(ctx, messages)
+		if err != nil {
+			return nil, fmt.Errorf("turn %d: %w", turn+1, err)
+		}
+		lastResp = resp
+
+		messages = append(messages, Message{Role: "assistant", Content: resp.Content})
+
+		if len(resp.ToolCalls) == 0 {
+			break
+		}
+
+		toolMsgs, err := stage.RunToolCallsInResponse(ctx, resp)
+		if err != nil {
+			return nil, fmt.Errorf("turn %d tool calls: %w", turn+1, err)
+		}
+		for _, msg := range toolMsgs {
+			messages = append(messages, *msg)
+		}
+	}
+
+	return &StageResult{Response: lastResp, Messages: messages}, nil
 }

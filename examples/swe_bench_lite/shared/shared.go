@@ -1,5 +1,5 @@
 // Package shared provides common types and helpers for SWE-bench Lite experiments.
-// Use LoadDataset, EnsureRepo, RunAgentLoop, and PatchFromWorkdir from baseline and other experiments.
+// Use LoadDataset, EnsureRepo, RunAgentLoop (with a *Stage), and PatchFromWorkdir from baseline and other experiments.
 package shared
 
 import (
@@ -389,7 +389,7 @@ func isContextOverflow(err error) bool {
 // RunAgentLoop runs the text-based ReAct loop (no tool calling).
 // The model outputs THOUGHT + ` + "```" + `orla_bash ... ` + "```" + `, we parse and execute the command,
 // then feed the output back as a user message.
-func RunAgentLoop(ctx context.Context, agent *orla.Agent, messages []orla.Message, recorder StepRecorder, getWorkdir func() string) error {
+func RunAgentLoop(ctx context.Context, stage *orla.Stage, messages []orla.Message, recorder StepRecorder, getWorkdir func() string) error {
 	formatRetries := 0
 	var lastCmd string
 	repeatCount := 0
@@ -397,7 +397,7 @@ func RunAgentLoop(ctx context.Context, agent *orla.Agent, messages []orla.Messag
 	for step := range MaxSteps {
 		log.Printf("step %d: executing", step+1)
 		recorder.BeginStep(step + 1)
-		resp, err := agent.ExecuteWithMessages(ctx, messages)
+		resp, err := stage.ExecuteWithMessages(ctx, messages)
 		if err != nil {
 			if isContextOverflow(err) {
 				recorder.EndStep(step + 1)

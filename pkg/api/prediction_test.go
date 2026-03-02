@@ -16,11 +16,10 @@ func TestNewOneBitPredictor(t *testing.T) {
 	backend := &LLMBackend{Name: "b", Endpoint: "http://vllm:8000/v1", Type: "openai", ModelID: "m"}
 	p := NewOneBitPredictor(client, backend)
 	require.NotNil(t, p)
-	require.NotNil(t, p.Agent)
-	require.NotNil(t, p.Agent.Stage)
-	require.NotNil(t, p.Agent.Stage.ResponseFormat)
-	assert.Equal(t, oneBitPredictorName, p.Agent.Stage.ResponseFormat.Name)
-	assert.Equal(t, oneBitPredictorSchema, p.Agent.Stage.ResponseFormat.Schema)
+	require.NotNil(t, p.Stage)
+	require.NotNil(t, p.Stage.ResponseFormat)
+	assert.Equal(t, oneBitPredictorName, p.Stage.ResponseFormat.Name)
+	assert.Equal(t, oneBitPredictorSchema, p.Stage.ResponseFormat.Schema)
 }
 
 func TestOneBitPredictor_Predict_True(t *testing.T) {

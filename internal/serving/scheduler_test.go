@@ -91,3 +91,64 @@ func TestSelectNextStageKey_PriorityTieBreaksByOldestHead(t *testing.T) {
 	selected := selectNextStageKey(stageQueues, model.SchedulingPolicyPriority)
 	assert.Equal(t, "older", selected)
 }
+
+// --- selectNextRequest tests ---
+
+func TestSelectNextRequest_FIFODefault(t *testing.T) {
+	now := time.Now()
+	queue := []*scheduledRequest{
+		{enqueuedAt: now.Add(-2 * time.Second), opts: model.InferenceOptions{}},
+		{enqueuedAt: now.Add(-1 * time.Second), opts: model.InferenceOptions{}},
+	}
+	assert.Equal(t, 0, selectNextRequest(queue))
+}
+
+func TestSelectNextRequest_PriorityPicksHighest(t *testing.T) {
+	now := time.Now()
+	low := 1
+	high := 9
+	queue := []*scheduledRequest{
+		{
+			enqueuedAt: now.Add(-2 * time.Second),
+			opts: model.InferenceOptions{
+				RequestSchedulingPolicy: model.RequestSchedulingPolicyPriority,
+				SchedulingHints:         &model.SchedulingHints{Priority: &low},
+			},
+		},
+		{
+			enqueuedAt: now.Add(-1 * time.Second),
+			opts: model.InferenceOptions{
+				RequestSchedulingPolicy: model.RequestSchedulingPolicyPriority,
+				SchedulingHints:         &model.SchedulingHints{Priority: &high},
+			},
+		},
+	}
+	assert.Equal(t, 1, selectNextRequest(queue))
+}
+
+func TestSelectNextRequest_PriorityTieBreaksByOldest(t *testing.T) {
+	now := time.Now()
+	same := 5
+	queue := []*scheduledRequest{
+		{
+			enqueuedAt: now.Add(-1 * time.Second),
+			opts: model.InferenceOptions{
+				RequestSchedulingPolicy: model.RequestSchedulingPolicyPriority,
+				SchedulingHints:         &model.SchedulingHints{Priority: &same},
+			},
+		},
+		{
+			enqueuedAt: now.Add(-3 * time.Second),
+			opts: model.InferenceOptions{
+				RequestSchedulingPolicy: model.RequestSchedulingPolicyPriority,
+				SchedulingHints:         &model.SchedulingHints{Priority: &same},
+			},
+		},
+	}
+	assert.Equal(t, 1, selectNextRequest(queue))
+}
+
+func TestSelectNextRequest_SingleElement(t *testing.T) {
+	queue := []*scheduledRequest{{opts: model.InferenceOptions{}}}
+	assert.Equal(t, 0, selectNextRequest(queue))
+}

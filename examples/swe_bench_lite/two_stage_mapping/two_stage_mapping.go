@@ -71,8 +71,8 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		return fmt.Errorf("register light backend: %w", err)
 	}
 
-	lightStage := orla.NewAgentStage("light", lightBackend)
-	heavyStage := orla.NewAgentStage("heavy", heavyBackend)
+	lightStage := orla.NewStage("light", lightBackend)
+	heavyStage := orla.NewStage("heavy", heavyBackend)
 	lightStage.SetTemperature(0.7)
 	heavyStage.SetTemperature(0.7)
 	lightStage.SetMaxTokens(shared.MaxOutputTokens)
@@ -80,11 +80,9 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	lightStage.SetChatTemplateKwargs(shared.NoThinking)
 	heavyStage.SetChatTemplateKwargs(shared.NoThinking)
 
+	lightStage.Client = client
+	heavyStage.Client = client
 	var mapper orla.StageMapper = orla.NewOneBitStageMapper(client, lightBackend, lightStage, heavyStage)
-	agentLight := orla.NewAgent(client)
-	agentLight.SetStage(lightStage)
-	agentHeavy := orla.NewAgent(client)
-	agentHeavy.SetStage(heavyStage)
 
 	outFile, err := os.OpenFile(shared.OutputPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -127,13 +125,13 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	}
 
 	// Phase 2: one worker per backend; light and heavy run concurrently
-	runJob := func(job stageJob, agent *orla.Agent) {
+	runJob := func(job stageJob, stage *orla.Stage) {
 		inst := job.inst
 		rec := &shared.InstanceRecorder{}
 		rec.BeginInstance(inst.InstanceID, job.stageName)
 		messages := shared.PrepareInitialMessages(inst)
 		workdir := job.absWorkdir
-		if err := shared.RunAgentLoop(ctx, agent, messages, rec, func() string { return workdir }); err != nil {
+		if err := shared.RunAgentLoop(ctx, stage, messages, rec, func() string { return workdir }); err != nil {
 			log.Printf("instance %s: %v", inst.InstanceID, err)
 		}
 		metrics.AddInstance(rec.EndInstance())
@@ -175,13 +173,13 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	go func() {
 		defer wg.Done()
 		for j := range lightChan {
-			runJob(j, agentLight)
+			runJob(j, lightStage)
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		for j := range heavyChan {
-			runJob(j, agentHeavy)
+			runJob(j, heavyStage)
 		}
 	}()
 	wg.Wait()

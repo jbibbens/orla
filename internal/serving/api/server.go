@@ -77,7 +77,7 @@ func (s *AgenticServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 // Inference options (stream, max_tokens, temperature, top_p) are embedded so the JSON body stays flat.
 type ExecuteRequest struct {
 	Backend  string          `json:"backend"`
-	Stage    string          `json:"stage,omitempty"`
+	StageID  string          `json:"stage_id,omitempty"`
 	Prompt   string          `json:"prompt,omitempty"`
 	Messages []model.Message `json:"messages,omitempty"`
 	Tools    []*mcp.Tool     `json:"tools,omitempty"`
@@ -120,13 +120,22 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("unsupported scheduling policy %q", opts.SchedulingPolicy), http.StatusBadRequest)
 		return
 	}
-
-	if req.Stream {
-		s.handleExecuteStream(w, ctx, req.Backend, req.Stage, messages, req.Tools, opts)
+	switch opts.RequestSchedulingPolicy {
+	case "", model.RequestSchedulingPolicyFIFO, model.RequestSchedulingPolicyPriority:
+		// supported
+	default:
+		http.Error(w, fmt.Sprintf("unsupported request scheduling policy %q", opts.RequestSchedulingPolicy), http.StatusBadRequest)
 		return
 	}
 
-	response, err := s.layer.Execute(ctx, req.Backend, req.Stage, messages, req.Tools, opts)
+	stageID := req.StageID
+
+	if req.Stream {
+		s.handleExecuteStream(w, ctx, req.Backend, stageID, messages, req.Tools, opts)
+		return
+	}
+
+	response, err := s.layer.Execute(ctx, req.Backend, stageID, messages, req.Tools, opts)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)

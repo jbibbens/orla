@@ -152,8 +152,10 @@ func (e *backendExecutor) dequeue() (*scheduledRequest, int64, bool) {
 	decisionStart := time.Now()
 	stage := selectNextStageKey(e.stageQueues, e.policy)
 	stageQueue := e.stageQueues[stage]
-	req := stageQueue[0]
-	stageQueue = stageQueue[1:]
+
+	idx := selectNextRequest(stageQueue)
+	req := stageQueue[idx]
+	stageQueue = append(stageQueue[:idx], stageQueue[idx+1:]...)
 	if len(stageQueue) == 0 {
 		delete(e.stageQueues, stage)
 	} else {
@@ -162,6 +164,29 @@ func (e *backendExecutor) dequeue() (*scheduledRequest, int64, bool) {
 	e.queueLen--
 	decisionMs := time.Since(decisionStart).Milliseconds()
 	return req, decisionMs, true
+}
+
+// selectNextRequest returns the index of the next request to dequeue from a stage queue.
+// If the head request's RequestSchedulingPolicy is "priority", picks the highest-priority
+// request in the queue (tie-breaking by oldest enqueue time). Otherwise FIFO (index 0).
+func selectNextRequest(queue []*scheduledRequest) int {
+	if len(queue) <= 1 {
+		return 0
+	}
+	head := queue[0]
+	if head.opts.RequestSchedulingPolicy != model.RequestSchedulingPolicyPriority {
+		return 0
+	}
+	bestIdx := 0
+	bestPriority := head.opts.SchedulingHints.GetPriority()
+	for i, req := range queue[1:] {
+		p := req.opts.SchedulingHints.GetPriority()
+		if p > bestPriority || (p == bestPriority && req.enqueuedAt.Before(queue[bestIdx].enqueuedAt)) {
+			bestIdx = i + 1
+			bestPriority = p
+		}
+	}
+	return bestIdx
 }
 
 func selectNextStageKey(stageQueues map[string][]*scheduledRequest, policy model.SchedulingPolicy) string {

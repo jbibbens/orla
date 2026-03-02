@@ -7,127 +7,138 @@ import (
 	"sync"
 )
 
-// WorkflowPromptBuilder builds a node prompt using already-completed dependency results.
-type WorkflowPromptBuilder func(results map[string]*InferenceResponse) (string, error)
-
-// WorkflowNode defines one executable stage in a workflow graph.
-type WorkflowNode struct {
-	ID            string
-	Stage         *AgentStage
-	DependsOn     []string
-	Prompt        string
-	PromptBuilder WorkflowPromptBuilder
+// AgentResult wraps the output of an agent's DAG execution.
+type AgentResult struct {
+	StageResults map[string]*StageResult
 }
 
-// Workflow is a lightweight DAG of executable agent stages.
+// ContextPassingFn customizes how one agent's results feed into the next agent's stages.
+// It is called before a dependent agent starts, allowing mutation of that agent's stage prompts.
+type ContextPassingFn func(upstreamResults map[string]*AgentResult, downstream *Agent) error
+
+// Workflow composes multiple Agents with inter-agent dependencies.
+// Each agent is an independent DAG of stages. Agents with no inter-dependencies
+// run concurrently; the workflow-level DAG controls ordering between agents.
 type Workflow struct {
-	nodes map[string]*WorkflowNode
+	agents       map[string]*Agent
+	dependencies map[string][]string // agentName -> depends on []agentName
+	contextFn    ContextPassingFn
 }
 
 // NewWorkflow creates an empty workflow.
 func NewWorkflow() *Workflow {
-	return &Workflow{nodes: make(map[string]*WorkflowNode)}
+	return &Workflow{
+		agents:       make(map[string]*Agent),
+		dependencies: make(map[string][]string),
+	}
 }
 
-// AddNode adds a node to the workflow.
-func (w *Workflow) AddNode(node *WorkflowNode) error {
-	if node == nil {
-		return fmt.Errorf("workflow node cannot be nil")
+// SetContextPassingFn sets the function called before each dependent agent starts.
+func (w *Workflow) SetContextPassingFn(fn ContextPassingFn) {
+	w.contextFn = fn
+}
+
+// AddAgent adds an agent to the workflow.
+func (w *Workflow) AddAgent(agent *Agent) error {
+	if agent == nil {
+		return fmt.Errorf("agent cannot be nil")
 	}
-	if node.ID == "" {
-		return fmt.Errorf("workflow node id is required")
+	if agent.Name == "" {
+		return fmt.Errorf("agent name is required")
 	}
-	if node.Stage == nil {
-		return fmt.Errorf("workflow node %q stage is required", node.ID)
+	if _, exists := w.agents[agent.Name]; exists {
+		return fmt.Errorf("agent %q already exists", agent.Name)
 	}
-	if _, exists := w.nodes[node.ID]; exists {
-		return fmt.Errorf("workflow node %q already exists", node.ID)
-	}
-	w.nodes[node.ID] = node
+	w.agents[agent.Name] = agent
 	return nil
 }
 
-// Nodes returns all nodes keyed by ID.
-func (w *Workflow) Nodes() map[string]*WorkflowNode {
-	out := make(map[string]*WorkflowNode, len(w.nodes))
-	maps.Copy(out, w.nodes)
+// AddDependency declares that agentName depends on dependsOnAgentName.
+func (w *Workflow) AddDependency(agentName, dependsOnAgentName string) error {
+	if _, ok := w.agents[agentName]; !ok {
+		return fmt.Errorf("agent %q not found", agentName)
+	}
+	if _, ok := w.agents[dependsOnAgentName]; !ok {
+		return fmt.Errorf("dependency agent %q not found", dependsOnAgentName)
+	}
+	w.dependencies[agentName] = append(w.dependencies[agentName], dependsOnAgentName)
+	return nil
+}
+
+// Agents returns all agents keyed by name.
+func (w *Workflow) Agents() map[string]*Agent {
+	out := make(map[string]*Agent, len(w.agents))
+	maps.Copy(out, w.agents)
 	return out
 }
 
-// ExecuteWorkflow executes the workflow DAG with dependency-aware scheduling.
-// Independent nodes execute concurrently; fan-out and fan-in are naturally supported via DependsOn.
-func (c *OrlaClient) ExecuteWorkflow(ctx context.Context, workflow *Workflow) (map[string]*InferenceResponse, error) {
-	if workflow == nil {
-		return nil, fmt.Errorf("workflow cannot be nil")
-	}
-	if len(workflow.nodes) == 0 {
-		return map[string]*InferenceResponse{}, nil
+// Execute runs the workflow DAG: agents execute their internal stage DAGs,
+// respecting inter-agent dependencies. Independent agents run concurrently.
+func (w *Workflow) Execute(ctx context.Context) (map[string]*AgentResult, error) {
+	if len(w.agents) == 0 {
+		return map[string]*AgentResult{}, nil
 	}
 
-	dependents := make(map[string][]string, len(workflow.nodes))
-	remainingDeps := make(map[string]int, len(workflow.nodes))
-	for id, node := range workflow.nodes {
-		for _, depID := range node.DependsOn {
-			if _, ok := workflow.nodes[depID]; !ok {
-				return nil, fmt.Errorf("workflow node %q depends on unknown node %q", id, depID)
+	// Validate dependencies
+	for name, deps := range w.dependencies {
+		for _, depName := range deps {
+			if _, ok := w.agents[depName]; !ok {
+				return nil, fmt.Errorf("agent %q depends on unknown agent %q", name, depName)
 			}
-			dependents[depID] = append(dependents[depID], id)
 		}
-		remainingDeps[id] = len(node.DependsOn)
 	}
 
-	results := make(map[string]*InferenceResponse, len(workflow.nodes))
+	dependents := make(map[string][]string, len(w.agents))
+	remainingDeps := make(map[string]int, len(w.agents))
+	for name := range w.agents {
+		for _, depName := range w.dependencies[name] {
+			dependents[depName] = append(dependents[depName], name)
+		}
+		remainingDeps[name] = len(w.dependencies[name])
+	}
+
+	results := make(map[string]*AgentResult, len(w.agents))
 	var resultsMu sync.RWMutex
 	var remainingMu sync.Mutex
 
-	type nodeOutcome struct {
-		id        string
-		executed  bool
+	type agentOutcome struct {
+		name      string
 		err       error
 		unblocked []string
 	}
 
-	outcomeCh := make(chan nodeOutcome, len(workflow.nodes))
-	readyCh := make(chan string, len(workflow.nodes))
+	outcomeCh := make(chan agentOutcome, len(w.agents))
+	readyCh := make(chan string, len(w.agents))
 
-	startNode := func(nodeID string) {
+	startAgent := func(agentName string) {
 		go func() {
-			node := workflow.nodes[nodeID]
-			agent := NewAgent(c)
-			agent.SetStage(node.Stage)
+			agent := w.agents[agentName]
 
-			resultsMu.RLock()
-			depSnapshot := make(map[string]*InferenceResponse)
-			maps.Copy(depSnapshot, results)
-			resultsMu.RUnlock()
+			if w.contextFn != nil {
+				resultsMu.RLock()
+				snapshot := make(map[string]*AgentResult, len(results))
+				maps.Copy(snapshot, results)
+				resultsMu.RUnlock()
 
-			prompt := node.Prompt
-			if node.PromptBuilder != nil {
-				builtPrompt, err := node.PromptBuilder(depSnapshot)
-				if err != nil {
-					outcomeCh <- nodeOutcome{id: nodeID, err: fmt.Errorf("node %q prompt builder failed: %w", nodeID, err)}
+				if err := w.contextFn(snapshot, agent); err != nil {
+					outcomeCh <- agentOutcome{name: agentName, err: fmt.Errorf("agent %q context passing: %w", agentName, err)}
 					return
 				}
-				prompt = builtPrompt
-			}
-			if prompt == "" {
-				outcomeCh <- nodeOutcome{id: nodeID, err: fmt.Errorf("node %q prompt is empty", nodeID)}
-				return
 			}
 
-			resp, err := agent.Execute(ctx, prompt)
+			stageResults, err := agent.ExecuteDAG(ctx)
 			if err != nil {
-				outcomeCh <- nodeOutcome{id: nodeID, err: fmt.Errorf("node %q execution failed: %w", nodeID, err)}
+				outcomeCh <- agentOutcome{name: agentName, err: fmt.Errorf("agent %q: %w", agentName, err)}
 				return
 			}
 
 			resultsMu.Lock()
-			results[nodeID] = resp
+			results[agentName] = &AgentResult{StageResults: stageResults}
 			resultsMu.Unlock()
 
 			remainingMu.Lock()
-			unblocked := make([]string, 0, len(dependents[nodeID]))
-			for _, dep := range dependents[nodeID] {
+			var unblocked []string
+			for _, dep := range dependents[agentName] {
 				remainingDeps[dep]--
 				if remainingDeps[dep] == 0 {
 					unblocked = append(unblocked, dep)
@@ -135,14 +146,14 @@ func (c *OrlaClient) ExecuteWorkflow(ctx context.Context, workflow *Workflow) (m
 			}
 			remainingMu.Unlock()
 
-			outcomeCh <- nodeOutcome{id: nodeID, executed: true, unblocked: unblocked}
+			outcomeCh <- agentOutcome{name: agentName, unblocked: unblocked}
 		}()
 	}
 
 	remainingMu.Lock()
-	for id, deps := range remainingDeps {
+	for name, deps := range remainingDeps {
 		if deps == 0 {
-			readyCh <- id
+			readyCh <- name
 		}
 	}
 	remainingMu.Unlock()
@@ -152,8 +163,8 @@ func (c *OrlaClient) ExecuteWorkflow(ctx context.Context, workflow *Workflow) (m
 	for {
 		for {
 			select {
-			case nodeID := <-readyCh:
-				startNode(nodeID)
+			case agentName := <-readyCh:
+				startAgent(agentName)
 				dispatched++
 			default:
 				goto waitOutcome
@@ -161,18 +172,17 @@ func (c *OrlaClient) ExecuteWorkflow(ctx context.Context, workflow *Workflow) (m
 		}
 
 	waitOutcome:
-		if completed == len(workflow.nodes) {
+		if completed == len(w.agents) {
 			break
 		}
-		// No running tasks and no ready tasks implies a dependency cycle.
 		if dispatched == completed {
 			select {
-			case nodeID := <-readyCh:
-				startNode(nodeID)
+			case agentName := <-readyCh:
+				startAgent(agentName)
 				dispatched++
 				continue
 			default:
-				return nil, fmt.Errorf("workflow has at least one cycle; completed %d/%d nodes", completed, len(workflow.nodes))
+				return nil, fmt.Errorf("workflow has a cycle; completed %d/%d agents", completed, len(w.agents))
 			}
 		}
 
@@ -183,17 +193,15 @@ func (c *OrlaClient) ExecuteWorkflow(ctx context.Context, workflow *Workflow) (m
 			if outcome.err != nil {
 				return nil, outcome.err
 			}
-			if outcome.executed {
-				completed++
-				for _, next := range outcome.unblocked {
-					readyCh <- next
-				}
+			completed++
+			for _, next := range outcome.unblocked {
+				readyCh <- next
 			}
 		}
 	}
 
-	if dispatched != len(workflow.nodes) {
-		return nil, fmt.Errorf("workflow has at least one cycle; dispatched %d/%d nodes", dispatched, len(workflow.nodes))
+	if dispatched != len(w.agents) {
+		return nil, fmt.Errorf("workflow has a cycle; dispatched %d/%d agents", dispatched, len(w.agents))
 	}
 	return results, nil
 }

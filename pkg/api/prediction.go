@@ -21,18 +21,17 @@ var oneBitPredictorResponseFormat = NewStructuredOutputRequest(oneBitPredictorNa
 
 // OneBitPredictor is a predictor that returns a single bit of information.
 type OneBitPredictor struct {
-	Agent *Agent
+	Stage *Stage
 }
 
 // NewOneBitPredictor returns a new OneBitPredictor.
 // The predictor uses temperature 0 for deterministic classification.
 func NewOneBitPredictor(client *OrlaClient, backend *LLMBackend) *OneBitPredictor {
-	agent := NewAgent(client)
-	stage := NewAgentStage("one_bit_predictor", backend)
+	stage := NewStage("one_bit_predictor", backend)
+	stage.Client = client
 	stage.SetResponseFormat(oneBitPredictorResponseFormat)
 	stage.SetTemperature(0)
-	agent.SetStage(stage)
-	return &OneBitPredictor{Agent: agent}
+	return &OneBitPredictor{Stage: stage}
 }
 
 // oneBitResponse is the structured response shape for OneBitPredictor.
@@ -40,9 +39,9 @@ type oneBitResponse struct {
 	Prediction bool `json:"prediction"`
 }
 
-// Predict predicts a single bit of information. prompt is the text sent to the model (e.g. a question or statement to classify).
+// Predict predicts a single bit of information. prompt is the text sent to the model.
 func (p *OneBitPredictor) Predict(ctx context.Context, prompt string) (bool, error) {
-	response, err := p.Agent.Execute(ctx, prompt)
+	response, err := p.Stage.Execute(ctx, prompt)
 	if err != nil {
 		return false, fmt.Errorf("failed to execute prediction: %w", err)
 	}
