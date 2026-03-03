@@ -1,5 +1,6 @@
 // Package twostagemappingcomplexitysched runs the SWE-bench Lite two-stage mapping
-// experiment with backend scheduling policies enabled.
+// experiment with complexity-based scheduling: heavy instances are sorted by predicted
+// complexity (simplest first) using SJF scheduling.
 package twostagemappingcomplexitysched
 
 import (
@@ -16,13 +17,10 @@ import (
 )
 
 const (
-	// Default heavy (8B) and light (4B) model IDs for stage mapping.
-	// Use Qwen3 for both so the "qwen" tool-call parser behaves consistently (Qwen2.5 can emit misparsed tool calls).
-	heavyModelID = "Qwen/Qwen3-8B"
-	lightModelID = "Qwen/Qwen3-4B-Instruct-2507"
-	// Default light backend URL when running two SGLang services (e.g. sglang + sglang-light).
+	heavyModelID    = "Qwen/Qwen3-8B"
+	lightModelID    = "Qwen/Qwen3-4B-Instruct-2507"
 	defaultLightURL = "http://sglang-light:30000/v1"
-	// Router prompt: model returns prediction true = light, false = heavy. Balanced criteria; no default bias.
+
 	routerPromptPrefix = `You are classifying a software engineering task for routing. Judge based on the task description only.
 
 Choose true (light) when the fix is likely: a single file or few lines, a clear bug (typo, wrong constant, off-by-one), config/test/doc tweak, or the issue clearly points to an obvious file or location.
@@ -30,21 +28,31 @@ Choose true (light) when the fix is likely: a single file or few lines, a clear 
 Choose false (heavy) when the fix likely needs: multiple files, unclear root cause, design or API changes, or reasoning across several parts of the codebase.
 
 Apply the criteria above; choose the option that best matches the task. Output prediction: `
+
+	complexityPromptPrefix = `You are estimating the complexity of a software engineering task on a scale of 1-5.
+
+1 = Trivial: single-line fix, obvious typo or constant correction
+2 = Simple: one file, small localized change, clear from the error message
+3 = Moderate: a few files or functions, some reasoning about call chains
+4 = Complex: multiple files, unclear root cause, need to understand module interactions
+5 = Very complex: deep architectural issue, cross-cutting changes, significant design reasoning
+
+Judge based on the task description only. Output your estimate as complexity: `
 )
 
-// We run one job at a time per backend (light and heavy). The concurrency win is that
-// light and heavy backends are used at the same time, not that we parallelize within one backend.
-
 type stageJob struct {
-	inst       shared.SWEBenchLiteInstance
-	absWorkdir string
-	stageName  string
+	inst          shared.SWEBenchLiteInstance
+	absWorkdir    string
+	stageName     string
+	complexity    int // 1-5 predicted complexity (heavy instances only)
+	priority      int // scheduling priority = 6 - complexity (higher = scheduled first)
+	queuePosition int // position in the sorted queue (for metrics)
 }
 
 // Run loads the dataset, registers light and heavy backends, then:
 // 1) Routes all instances (light model) and assigns each to light or heavy.
-// 2) Runs light-routed instances in parallel on the light backend and heavy-routed on the heavy backend concurrently.
-// 3) Appends predictions to shared.OutputPath (order may differ from dataset).
+// 2) Predicts complexity for heavy instances and assigns scheduling priority (SJF: simplest first).
+// 3) Sorts heavy queue by priority and runs light/heavy concurrently.
 func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	client := orla.NewOrlaClient(shared.OrlaURL)
 	if err := client.Health(ctx); err != nil {
@@ -72,9 +80,9 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 
 	lightStage := orla.NewStage("light", lightBackend)
 	heavyStage := orla.NewStage("heavy", heavyBackend)
-	// Scheduling experiment: keep light queue FCFS; prioritize heavy-stage requests by priority.
 	lightStage.SetSchedulingPolicy(orla.SchedulingPolicyFCFS)
 	heavyStage.SetSchedulingPolicy(orla.SchedulingPolicyPriority)
+	heavyStage.SetRequestSchedulingPolicy("priority")
 	lightStage.SetTemperature(0.7)
 	heavyStage.SetTemperature(0.7)
 	lightStage.SetMaxTokens(shared.MaxOutputTokens)
@@ -85,6 +93,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 	lightStage.Client = client
 	heavyStage.Client = client
 	var mapper orla.StageMapper = orla.NewOneBitStageMapper(client, lightBackend, lightStage, heavyStage)
+	scorePredictor := orla.NewScorePredictor(client, lightBackend)
 
 	outFile, err := os.OpenFile(shared.OutputPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -117,20 +126,43 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 		if err != nil {
 			return fmt.Errorf("instance %s map stage: %w", inst.InstanceID, err)
 		}
-		log.Printf("instance %s: router => %s (prompt_len=%d)", inst.InstanceID, stage.Name, len(routerPrompt))
+
 		job := stageJob{inst: inst, absWorkdir: absWorkdir, stageName: stage.Name}
 		if stage.Name == "light" {
+			log.Printf("instance %s: router => light", inst.InstanceID)
 			lightJobs = append(lightJobs, job)
 		} else {
+			complexityPrompt := complexityPromptPrefix + shared.FormatProblemMessage(inst)
+			complexity, cErr := scorePredictor.Predict(ctx, complexityPrompt)
+			if cErr != nil {
+				log.Printf("instance %s: complexity prediction failed, defaulting to 3: %v", inst.InstanceID, cErr)
+				complexity = 3
+			}
+			job.complexity = complexity
+			job.priority = 6 - complexity
+			log.Printf("instance %s: router => heavy, complexity=%d, priority=%d", inst.InstanceID, complexity, job.priority)
 			heavyJobs = append(heavyJobs, job)
 		}
 	}
 
+	// Sort heavy jobs by priority descending (simplest first = highest priority first).
+	sortByPriority(heavyJobs)
+	for i, j := range heavyJobs {
+		log.Printf("heavy queue[%d]: %s (complexity=%d, priority=%d)", i, j.inst.InstanceID, j.complexity, j.priority)
+	}
+
 	// Phase 2: one worker per backend; light and heavy run concurrently
 	runJob := func(job stageJob, stage *orla.Stage) {
+		if job.priority > 0 {
+			p := job.priority
+			stage.SetSchedulingHints(&orla.SchedulingHints{Priority: &p})
+		}
+
 		inst := job.inst
 		rec := &shared.InstanceRecorder{}
 		rec.BeginInstance(inst.InstanceID, job.stageName)
+		rec.SetComplexity(job.complexity)
+		rec.SetQueuePosition(job.queuePosition)
 		messages := shared.PrepareInitialMessages(inst)
 		workdir := job.absWorkdir
 		if err := shared.RunAgentLoop(ctx, stage, messages, rec, func() string { return workdir }); err != nil {
@@ -161,11 +193,13 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 
 	lightChan := make(chan stageJob, len(lightJobs))
 	heavyChan := make(chan stageJob, len(heavyJobs))
-	for _, j := range lightJobs {
+	for i, j := range lightJobs {
+		j.queuePosition = i
 		lightChan <- j
 	}
 	close(lightChan)
-	for _, j := range heavyJobs {
+	for i, j := range heavyJobs {
+		j.queuePosition = i
 		heavyChan <- j
 	}
 	close(heavyChan)
@@ -188,4 +222,16 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset) error {
 
 	log.Printf("Done. Predictions written to %s, metrics to %s", shared.OutputPath, shared.MetricsPath)
 	return nil
+}
+
+func sortByPriority(jobs []stageJob) {
+	for i := 1; i < len(jobs); i++ {
+		key := jobs[i]
+		j := i - 1
+		for j >= 0 && jobs[j].priority < key.priority {
+			jobs[j+1] = jobs[j]
+			j--
+		}
+		jobs[j+1] = key
+	}
 }

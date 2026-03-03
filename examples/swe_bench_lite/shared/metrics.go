@@ -41,6 +41,8 @@ type StepMetrics struct {
 type InstanceMetrics struct {
 	InstanceID            string        `json:"instance_id"`
 	MappedStage           string        `json:"mapped_stage,omitempty"`
+	Complexity            int           `json:"complexity,omitempty"`
+	QueuePosition         int           `json:"queue_position,omitempty"`
 	StartTime             int64         `json:"start_time_ms"`
 	EndTime               int64         `json:"end_time_ms"`
 	DurationMs            int64         `json:"duration_ms"`
@@ -77,6 +79,16 @@ func (r *InstanceRecorder) BeginInstance(instanceID, mappedStage string) {
 		StartTime:   time.Now().UnixMilli(),
 		Steps:       nil,
 	}
+}
+
+// SetComplexity records the predicted complexity score for this instance.
+func (r *InstanceRecorder) SetComplexity(c int) {
+	r.inst.Complexity = c
+}
+
+// SetQueuePosition records the queue position for this instance.
+func (r *InstanceRecorder) SetQueuePosition(pos int) {
+	r.inst.QueuePosition = pos
 }
 
 // BeginStep implements StepRecorder.
