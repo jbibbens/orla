@@ -30,6 +30,9 @@ services:
       # Share GPU with vllm-light on single-GPU (e.g. 96GB): use ~60% so both fit
       - "--gpu-memory-utilization"
       - "${VLLM_HEAVY_GPU_UTIL:-0.60}"
+      # Cap context so KV cache fits; 32k is enough for single-shot SWE-bench
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
     ipc: host
     restart: unless-stopped
     healthcheck:
@@ -68,6 +71,9 @@ services:
       # Share GPU with vllm-heavy: use ~35% so both fit on e.g. 96GB
       - "--gpu-memory-utilization"
       - "${VLLM_LIGHT_GPU_UTIL:-0.35}"
+      # Cap context so KV cache fits in 35% GPU; 32k is enough for single-shot SWE-bench
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
     ipc: host
     restart: unless-stopped
     healthcheck:
