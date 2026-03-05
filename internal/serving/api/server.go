@@ -82,6 +82,9 @@ type ExecuteRequest struct {
 	Messages []model.Message `json:"messages,omitempty"`
 	Tools    []*mcp.Tool     `json:"tools,omitempty"`
 	model.InferenceOptions
+
+	WorkflowID  string `json:"workflow_id,omitempty"`
+	CachePolicy string `json:"cache_policy,omitempty"`
 }
 
 // ExecuteResponse is the response body for the execute endpoint.
@@ -129,13 +132,17 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stageID := req.StageID
+	chatOpts := serving.ChatOptions{
+		WorkflowID:  req.WorkflowID,
+		CachePolicy: req.CachePolicy,
+	}
 
 	if req.Stream {
-		s.handleExecuteStream(w, ctx, req.Backend, stageID, messages, req.Tools, opts)
+		s.handleExecuteStream(w, ctx, req.Backend, stageID, messages, req.Tools, opts, chatOpts)
 		return
 	}
 
-	response, err := s.layer.Execute(ctx, req.Backend, stageID, messages, req.Tools, opts)
+	response, err := s.layer.Execute(ctx, req.Backend, stageID, messages, req.Tools, opts, chatOpts)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -158,8 +165,8 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *AgenticServer) handleExecuteStream(w http.ResponseWriter, ctx context.Context, backend, stage string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) {
-	response, eventCh, err := s.layer.ExecuteStream(ctx, backend, stage, messages, tools, opts)
+func (s *AgenticServer) handleExecuteStream(w http.ResponseWriter, ctx context.Context, backend, stage string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions, chatOpts serving.ChatOptions) {
+	response, eventCh, err := s.layer.ExecuteStream(ctx, backend, stage, messages, tools, opts, chatOpts)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -199,12 +206,12 @@ func (s *AgenticServer) handleExecuteStream(w http.ResponseWriter, ctx context.C
 
 // RegisterBackendRequest is the request body for registering an LLM backend.
 type RegisterBackendRequest struct {
-	Name           string `json:"name"`                        // backend name (used as "backend" in execute requests)
-	Endpoint       string `json:"endpoint"`                    // e.g. "http://vllm:8000/v1", "http://localhost:11434"
-	Type           string `json:"type"`                        // "openai" or "ollama" or "sglang"
-	ModelID        string `json:"model_id"`                    // full model identifier e.g. "openai:Qwen/Qwen3-4B-Instruct-2507", "ollama:llama3"
-	APIKeyEnvVar   string `json:"api_key_env_var,omitempty"`   // optional env var name for API key (for openai-type backends)
-	MaxConcurrency int    `json:"max_concurrency,omitempty"`   // max concurrent requests to this backend (default 1)
+	Name           string `json:"name"`                      // backend name (used as "backend" in execute requests)
+	Endpoint       string `json:"endpoint"`                  // e.g. "http://vllm:8000/v1", "http://localhost:11434"
+	Type           string `json:"type"`                      // "openai" or "ollama" or "sglang"
+	ModelID        string `json:"model_id"`                  // full model identifier e.g. "openai:Qwen/Qwen3-4B-Instruct-2507", "ollama:llama3"
+	APIKeyEnvVar   string `json:"api_key_env_var,omitempty"` // optional env var name for API key (for openai-type backends)
+	MaxConcurrency int    `json:"max_concurrency,omitempty"` // max concurrent requests to this backend (default 1)
 }
 
 // RegisterBackendResponse is the response body for register backend.

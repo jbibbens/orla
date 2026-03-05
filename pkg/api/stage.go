@@ -62,6 +62,11 @@ type Stage struct {
 	StageSchedulingPolicy   string
 	RequestSchedulingPolicy string
 	SchedulingHints         *SchedulingHints
+
+	CachePolicy string      // "preserve", "flush", or "" (auto/default)
+	CacheHnts   *CacheHints // per-stage cache hint overrides
+
+	workflowID string // set internally by Agent/Workflow, not user-facing
 }
 
 func randomStageID() string {
@@ -91,6 +96,8 @@ func (s *Stage) SetExecutionMode(mode ExecutionMode)             { s.ExecutionMo
 func (s *Stage) SetMaxTurns(n int)                               { s.MaxTurns = n }
 func (s *Stage) SetPromptBuilder(builder StagePromptBuilder)     { s.PromptBuilder = builder }
 func (s *Stage) SetMessagesBuilder(builder StageMessagesBuilder) { s.MessagesBuilder = builder }
+func (s *Stage) SetCachePolicy(policy string)                    { s.CachePolicy = policy }
+func (s *Stage) SetCacheHints(hints *CacheHints)                 { s.CacheHnts = hints }
 
 // AddTool adds a tool to this stage. Returns an error if t is nil.
 func (s *Stage) AddTool(t *Tool) error {
@@ -132,6 +139,9 @@ func (s *Stage) buildRequestWithMessages(messages []Message) (*ExecuteRequest, e
 	return r, nil
 }
 
+// setWorkflowID is called by the Agent to propagate workflow context into requests.
+func (s *Stage) setWorkflowID(wfID string) { s.workflowID = wfID }
+
 func (s *Stage) applyInferenceOptions(r *ExecuteRequest) {
 	r.MaxTokens = s.MaxTokens
 	r.Temperature = s.Temperature
@@ -141,6 +151,9 @@ func (s *Stage) applyInferenceOptions(r *ExecuteRequest) {
 	r.SchedulingPolicy = s.StageSchedulingPolicy
 	r.RequestSchedulingPolicy = s.RequestSchedulingPolicy
 	r.SchedulingHints = s.SchedulingHints
+	r.CachePolicy = s.CachePolicy
+	r.CacheHints = s.CacheHnts
+	r.WorkflowID = s.workflowID
 }
 
 func (s *Stage) toolsToMCP() []*mcp.Tool {

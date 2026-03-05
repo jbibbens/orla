@@ -15,6 +15,7 @@ type Agent struct {
 
 	stages       map[string]*Stage
 	dependencies map[string][]string // stageID -> depends on []stageID
+	workflowID   string              // set by Workflow before execution
 }
 
 // NewAgent returns an agent bound to the given client.
@@ -67,6 +68,12 @@ func (a *Agent) Stages() map[string]*Stage {
 func (a *Agent) ExecuteDAG(ctx context.Context) (map[string]*StageResult, error) {
 	if len(a.stages) == 0 {
 		return nil, fmt.Errorf("agent %q has no stages", a.Name)
+	}
+
+	if a.workflowID != "" {
+		for _, s := range a.stages {
+			s.setWorkflowID(a.workflowID)
+		}
 	}
 
 	for id, deps := range a.dependencies {

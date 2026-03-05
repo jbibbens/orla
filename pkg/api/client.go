@@ -121,6 +121,12 @@ type ExecuteRequest struct {
 	RequestSchedulingPolicy string `json:"request_scheduling_policy,omitempty"`
 	// SchedulingHints are optional policy hints attached to the request.
 	SchedulingHints *SchedulingHints `json:"scheduling_hints,omitempty"`
+	// WorkflowID groups requests from the same workflow execution for cache management.
+	WorkflowID string `json:"workflow_id,omitempty"`
+	// CachePolicy is the stage-level cache policy override ("preserve", "flush", or empty for auto).
+	CachePolicy string `json:"cache_policy,omitempty"`
+	// CacheHints are optional per-stage cache parameters.
+	CacheHints *CacheHints `json:"cache_hints,omitempty"`
 }
 
 // GetStageID returns the stage ID for this request.

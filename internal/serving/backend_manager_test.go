@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewLLMServerManager(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	require.NotNil(t, manager)
 	assert.NotNil(t, manager.backends)
 	assert.NotNil(t, manager.providers)
@@ -18,7 +18,7 @@ func TestNewLLMServerManager(t *testing.T) {
 }
 
 func TestLLMServerManager_AddServer(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	manager.AddLLMBackend("server1", &core.LLMBackend{
 		Type:     core.LLMInferenceAPITypeOllama,
 		Endpoint: "http://localhost:11434",
@@ -30,7 +30,7 @@ func TestLLMServerManager_AddServer(t *testing.T) {
 }
 
 func TestLLMServerManager_ListServers(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	manager.AddLLMBackend("server1", &core.LLMBackend{}, "ollama:m1")
 	manager.AddLLMBackend("server2", &core.LLMBackend{}, "ollama:m2")
 	manager.AddLLMBackend("server3", &core.LLMBackend{}, "ollama:m3")
@@ -43,13 +43,13 @@ func TestLLMServerManager_ListServers(t *testing.T) {
 }
 
 func TestLLMServerManager_ListServers_Empty(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	servers := manager.ListLLMBackends()
 	assert.Len(t, servers, 0)
 }
 
 func TestLLMServerManager_GetProvider(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	manager.AddLLMBackend("server1", &core.LLMBackend{
 		Type:     core.LLMInferenceAPITypeOllama,
 		Endpoint: "http://localhost:11434",
@@ -68,7 +68,7 @@ func TestLLMServerManager_GetProvider(t *testing.T) {
 }
 
 func TestLLMServerManager_GetProvider_NotFound(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 
 	ctx := context.Background()
 	provider, err := manager.GetModelProvider(ctx, "nonexistent")
@@ -78,7 +78,7 @@ func TestLLMServerManager_GetProvider_NotFound(t *testing.T) {
 }
 
 func TestLLMServerManager_GetHealthStatus_NotFound(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 
 	ctx := context.Background()
 	status, err := manager.GetHealthStatus(ctx, "nonexistent")
@@ -88,7 +88,7 @@ func TestLLMServerManager_GetHealthStatus_NotFound(t *testing.T) {
 }
 
 func TestLLMServerManager_GetHealthStatus_ProviderError(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	manager.AddLLMBackend("server1", &core.LLMBackend{
 		Type:     core.LLMInferenceAPITypeOllama,
 		Endpoint: "http://invalid-host:99999",
@@ -101,7 +101,7 @@ func TestLLMServerManager_GetHealthStatus_ProviderError(t *testing.T) {
 }
 
 func TestLLMServerManager_ConcurrentAccess(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	manager.AddLLMBackend("server1", &core.LLMBackend{
 		Type:     core.LLMInferenceAPITypeOllama,
 		Endpoint: "http://localhost:11434",

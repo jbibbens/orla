@@ -187,7 +187,7 @@ func (p *delayProvider) Chat(_ context.Context, _ []model.Message, _ []*mcp.Tool
 func (p *delayProvider) EnsureReady(_ context.Context) error { return nil }
 
 func TestBackendExecutor_DefaultConcurrencyIsSerial(t *testing.T) {
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	manager.AddLLMBackend("b", &core.LLMBackend{
 		Type: core.LLMInferenceAPITypeOllama, Endpoint: "http://localhost:11434",
 	}, "ollama:m")
@@ -215,7 +215,7 @@ func TestBackendExecutor_DefaultConcurrencyIsSerial(t *testing.T) {
 
 func TestBackendExecutor_ConcurrencyRespected(t *testing.T) {
 	const concurrency = 3
-	manager := NewLLMBackendManager()
+	manager := NewLLMBackendManager(nil)
 	manager.AddLLMBackend("b", &core.LLMBackend{
 		Type: core.LLMInferenceAPITypeOllama, Endpoint: "http://localhost:11434",
 		MaxConcurrency: concurrency,
@@ -244,15 +244,15 @@ func TestBackendExecutor_ConcurrencyRespected(t *testing.T) {
 }
 
 func TestNewBackendExecutor_ClampsZeroToOne(t *testing.T) {
-	manager := NewLLMBackendManager()
-	exec := newBackendExecutor("test", manager, 0)
+	manager := NewLLMBackendManager(nil)
+	exec := newBackendExecutor("test", manager, 0, nil)
 	defer exec.close()
 	assert.Equal(t, 1, exec.maxConcurrency)
 }
 
 func TestNewBackendExecutor_ClampsNegativeToOne(t *testing.T) {
-	manager := NewLLMBackendManager()
-	exec := newBackendExecutor("test", manager, -5)
+	manager := NewLLMBackendManager(nil)
+	exec := newBackendExecutor("test", manager, -5, nil)
 	defer exec.close()
 	assert.Equal(t, 1, exec.maxConcurrency)
 }

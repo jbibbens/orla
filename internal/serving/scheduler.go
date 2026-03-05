@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dorcha-inc/orla/internal/model"
+	"github.com/dorcha-inc/orla/internal/serving/memory"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
@@ -24,6 +25,10 @@ type scheduledRequest struct {
 
 	enqueuedAt time.Time
 
+	// Memory Manager metadata
+	workflowID  string
+	cachePolicy string
+
 	resultCh chan scheduledResult
 }
 
@@ -38,6 +43,7 @@ type scheduledResult struct {
 type backendExecutor struct {
 	backendName    string
 	manager        *LLMBackendManager
+	memoryManager  *memory.DefaultManager
 	maxConcurrency int
 
 	mu          sync.Mutex
@@ -50,7 +56,7 @@ type backendExecutor struct {
 	closed      bool
 }
 
-func newBackendExecutor(backendName string, manager *LLMBackendManager, maxConcurrency int) *backendExecutor {
+func newBackendExecutor(backendName string, manager *LLMBackendManager, maxConcurrency int, mm *memory.DefaultManager) *backendExecutor {
 	if maxConcurrency < 1 {
 		zap.L().Warn("max concurrency is less than 1, setting to 1", zap.String("backend", backendName), zap.Int("max_concurrency", maxConcurrency))
 		maxConcurrency = 1
@@ -58,6 +64,7 @@ func newBackendExecutor(backendName string, manager *LLMBackendManager, maxConcu
 	exec := &backendExecutor{
 		backendName:    backendName,
 		manager:        manager,
+		memoryManager:  mm,
 		maxConcurrency: maxConcurrency,
 		capacity:       defaultBackendQueueCapacity,
 		stageQueues:    make(map[string][]*scheduledRequest),
@@ -120,11 +127,31 @@ func (e *backendExecutor) worker() {
 			continue
 		}
 
+		requestID := fmt.Sprintf("%s-%s-%d", req.backend, req.stageName, req.enqueuedAt.UnixNano())
+		if e.memoryManager != nil && req.workflowID != "" {
+			e.memoryManager.RecordInflight(memory.InflightRequest{
+				RequestID:  requestID,
+				WorkflowID: req.workflowID,
+				StageID:    req.stageName,
+				Backend:    req.backend,
+				Streaming:  req.opts.Stream,
+				StartedAt:  time.Now(),
+			})
+		}
+
 		dispatchStart := time.Now()
 		response, streamCh, err := provider.Chat(req.ctx, req.messages, req.tools, req.opts)
 		dispatchMs := time.Since(dispatchStart).Milliseconds()
 		queueWaitMs := dispatchStart.Sub(req.enqueuedAt).Milliseconds()
+
+		if e.memoryManager != nil && req.workflowID != "" && !req.opts.Stream {
+			e.memoryManager.ClearInflight(req.backend, requestID)
+		}
+
 		if err != nil {
+			if e.memoryManager != nil && req.workflowID != "" && req.opts.Stream {
+				e.memoryManager.ClearInflight(req.backend, requestID)
+			}
 			req.resultCh <- scheduledResult{err: fmt.Errorf("inference failed on server '%s': %w", req.backend, err)}
 			continue
 		}
@@ -135,7 +162,6 @@ func (e *backendExecutor) worker() {
 		response.Metrics.QueueWaitMs = queueWaitMs
 		response.Metrics.SchedulerDecisionMs = schedulerDecisionMs
 		response.Metrics.DispatchMs = dispatchMs
-		// Non-streaming backends block in provider.Chat; for streaming this remains a lightweight setup time.
 		if !req.opts.Stream {
 			response.Metrics.BackendLatencyMs = dispatchMs
 		}

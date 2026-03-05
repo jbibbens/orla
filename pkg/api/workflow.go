@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"maps"
 	"sync"
+
+	"github.com/docker/docker/pkg/namesgenerator"
 )
 
 // AgentResult wraps the output of an agent's DAG execution.
@@ -23,6 +25,7 @@ type Workflow struct {
 	agents       map[string]*Agent
 	dependencies map[string][]string // agentName -> depends on []agentName
 	contextFn    ContextPassingFn
+	memoryPolicy MemoryPolicy
 }
 
 // NewWorkflow creates an empty workflow.
@@ -36,6 +39,21 @@ func NewWorkflow() *Workflow {
 // SetContextPassingFn sets the function called before each dependent agent starts.
 func (w *Workflow) SetContextPassingFn(fn ContextPassingFn) {
 	w.contextFn = fn
+}
+
+// SetMemoryPolicy sets the workflow-level MemoryPolicy used by the Memory Manager
+// to decide cache actions at stage transitions. If not set, the default policy
+// (preserve on small increment + flush at boundary) is used.
+func (w *Workflow) SetMemoryPolicy(policy MemoryPolicy) {
+	w.memoryPolicy = policy
+}
+
+// MemoryPolicyOrDefault returns the configured MemoryPolicy or the default.
+func (w *Workflow) MemoryPolicyOrDefault() MemoryPolicy {
+	if w.memoryPolicy != nil {
+		return w.memoryPolicy
+	}
+	return NewDefaultMemoryPolicy()
 }
 
 // AddAgent adds an agent to the workflow.
@@ -77,6 +95,11 @@ func (w *Workflow) Agents() map[string]*Agent {
 func (w *Workflow) Execute(ctx context.Context) (map[string]*AgentResult, error) {
 	if len(w.agents) == 0 {
 		return map[string]*AgentResult{}, nil
+	}
+
+	workflowID := namesgenerator.GetRandomName(0)
+	for _, agent := range w.agents {
+		agent.workflowID = workflowID
 	}
 
 	// Validate dependencies

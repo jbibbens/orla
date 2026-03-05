@@ -7,6 +7,7 @@ import (
 
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/model"
+	"github.com/dorcha-inc/orla/internal/serving/memory"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
@@ -14,12 +15,15 @@ import (
 // AgenticLayer is the serving layer that manages LLM backends and executes inference.
 type AgenticLayer struct {
 	llmBackendManager *LLMBackendManager
+	MemoryManager     *memory.DefaultManager
 }
 
 // NewAgenticLayer creates a new serving layer.
 func NewAgenticLayer() *AgenticLayer {
+	mm := memory.NewDefaultManager(memory.DefaultManagerConfig{})
 	return &AgenticLayer{
-		llmBackendManager: NewLLMBackendManager(),
+		llmBackendManager: NewLLMBackendManager(mm),
+		MemoryManager:     mm,
 	}
 }
 
@@ -35,12 +39,12 @@ func (l *AgenticLayer) GetModelProvider(ctx context.Context, backendName string)
 
 // Execute runs a single non-streaming inference call against the named LLM backend.
 // For streaming, use ExecuteStream instead. opts.Stream must be false.
-func (l *AgenticLayer) Execute(ctx context.Context, serverName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) (*model.Response, error) {
+func (l *AgenticLayer) Execute(ctx context.Context, serverName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, error) {
 	if opts.Stream {
 		return nil, fmt.Errorf("Execute does not support streaming, use ExecuteStream instead")
 	}
 
-	response, _, err := l.llmBackendManager.ScheduleChat(ctx, serverName, stageName, messages, tools, opts)
+	response, _, err := l.llmBackendManager.ScheduleChat(ctx, serverName, stageName, messages, tools, opts, chatOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("inference failed on server '%s': %w", serverName, err)
 	}
@@ -54,12 +58,12 @@ func (l *AgenticLayer) Execute(ctx context.Context, serverName, stageName string
 // is consumed), a channel of stream events, and an error. The caller must consume the channel
 // until closed; the response content, tool_calls, and metrics are populated by the provider's
 // goroutine as the stream completes. opts.Stream must be true.
-func (l *AgenticLayer) ExecuteStream(ctx context.Context, serverName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+func (l *AgenticLayer) ExecuteStream(ctx context.Context, serverName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, <-chan model.StreamEvent, error) {
 	if !opts.Stream {
 		return nil, nil, fmt.Errorf("ExecuteStream requires opts.Stream to be true")
 	}
 
-	response, ch, err := l.llmBackendManager.ScheduleChat(ctx, serverName, stageName, messages, tools, opts)
+	response, ch, err := l.llmBackendManager.ScheduleChat(ctx, serverName, stageName, messages, tools, opts, chatOpts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("inference failed on server '%s': %w", serverName, err)
 	}

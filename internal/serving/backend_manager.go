@@ -8,6 +8,7 @@ import (
 
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/model"
+	"github.com/dorcha-inc/orla/internal/serving/memory"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
@@ -20,18 +21,20 @@ type backendEntry struct {
 
 // LLMBackendManager manages a pool of LLM backend configurations and their providers
 type LLMBackendManager struct {
-	backends  map[string]*backendEntry
-	providers map[string]model.Provider
-	executors map[string]*backendExecutor
-	mu        sync.RWMutex
+	backends      map[string]*backendEntry
+	providers     map[string]model.Provider
+	executors     map[string]*backendExecutor
+	memoryManager *memory.DefaultManager
+	mu            sync.RWMutex
 }
 
-// NewLLMBackendManager creates a new LLM backend manager
-func NewLLMBackendManager() *LLMBackendManager {
+// NewLLMBackendManager creates a new LLM backend manager.
+func NewLLMBackendManager(mm *memory.DefaultManager) *LLMBackendManager {
 	return &LLMBackendManager{
-		backends:  make(map[string]*backendEntry),
-		providers: make(map[string]model.Provider),
-		executors: make(map[string]*backendExecutor),
+		backends:      make(map[string]*backendEntry),
+		providers:     make(map[string]model.Provider),
+		executors:     make(map[string]*backendExecutor),
+		memoryManager: mm,
 	}
 }
 
@@ -95,14 +98,20 @@ func (m *LLMBackendManager) getOrCreateExecutorLocked(backendName string) (*back
 	if exec, ok := m.executors[backendName]; ok {
 		return exec, nil
 	}
-	exec := newBackendExecutor(backendName, m, entry.maxConcurrency)
+	exec := newBackendExecutor(backendName, m, entry.maxConcurrency, m.memoryManager)
 	m.executors[backendName] = exec
 	return exec, nil
 }
 
+// ChatOptions carries optional metadata for a scheduled chat request.
+type ChatOptions struct {
+	WorkflowID  string
+	CachePolicy string
+}
+
 // ScheduleChat queues a request for execution under the backend's scheduling policy.
 // stageName identifies the stage queue inside the backend. Empty uses "default".
-func (m *LLMBackendManager) ScheduleChat(ctx context.Context, backendName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+func (m *LLMBackendManager) ScheduleChat(ctx context.Context, backendName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, <-chan model.StreamEvent, error) {
 	m.mu.Lock()
 	exec, err := m.getOrCreateExecutorLocked(backendName)
 	m.mu.Unlock()
@@ -119,6 +128,10 @@ func (m *LLMBackendManager) ScheduleChat(ctx context.Context, backendName, stage
 		opts:       opts,
 		enqueuedAt: time.Now(),
 		resultCh:   make(chan scheduledResult, 1),
+	}
+	if len(chatOpts) > 0 {
+		req.workflowID = chatOpts[0].WorkflowID
+		req.cachePolicy = chatOpts[0].CachePolicy
 	}
 	if err := exec.enqueue(req); err != nil {
 		return nil, nil, err
