@@ -5,17 +5,19 @@
 //
 //	Workflow
 //	  |
-//	  +-- Stage "classify"       (category + key issue, structured output, light model)
-//	  +-- Stage "sentiment"      (sentiment + urgency signals, structured output, light model)
-//	  |   (classify and sentiment run in parallel — no dependency between them)
-//	  +-- Stage "prioritize"     (severity + priority score; depends on both classify and sentiment)
+//	  +-- Stage "classify"       (structured output: category, product, key issue, customer request)
 //	  |
-//	  +-- Stage "draft_response" (personalized reply; depends on prioritize, heavy model)
-//	  +-- Stage "policy_check"   (identify applicable policies; depends on prioritize, heavy model)
-//	  |   (draft_response and policy_check run in parallel)
-//	  +-- Stage "final_review"   (review draft against policies; depends on both draft_response and policy_check)
+//	  +-- Stage "policy_check"   (agent-loop: reads policy YAML via tool, returns accept/deny + reasoning)
+//	  |     depends on: classify
 //	  |
-//	  +-- Stage "route_ticket"   (escalation decision; depends on prioritize, light model)
+//	  +-- Stage "reply"          (agent-loop: composes and sends customer email via tool, structured confirmation)
+//	  |     depends on: policy_check
+//	  |
+//	  +-- Stage "route_ticket"   (agent-loop: notifies team, reads team descriptions, sends internal ticket)
+//	        depends on: classify
+//
+//	Stage 3 (reply) and Stage 4 (route_ticket) run in parallel once their
+//	respective dependencies are satisfied.
 package workflowdemo
 
 import (
@@ -36,6 +38,10 @@ const (
 	defaultHeavyModel = "Qwen/Qwen3-8B"
 )
 
+// ---------------------------------------------------------------------------
+// Structured-output schemas
+// ---------------------------------------------------------------------------
+
 var classifySchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -51,62 +57,238 @@ var classifySchema = map[string]any{
 			"type":        "string",
 			"description": "One-sentence summary of the core issue",
 		},
-	},
-	"required": []any{"category", "product", "key_issue"},
-}
-
-var sentimentSchema = map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"sentiment": map[string]any{
-			"type": "string",
-			"enum": []any{"frustrated", "neutral", "positive"},
-		},
-		"urgency_signals": map[string]any{
-			"type":        "array",
-			"items":       map[string]any{"type": "string"},
-			"description": "Phrases or cues from the ticket that indicate urgency",
+		"customer_request": map[string]any{
+			"type":        "string",
+			"description": "What the customer is actually asking for",
 		},
 	},
-	"required": []any{"sentiment", "urgency_signals"},
+	"required": []any{"category", "product", "key_issue", "customer_request"},
 }
 
-var prioritySchema = map[string]any{
+var policyDecisionSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"severity": map[string]any{
+		"decision": map[string]any{
 			"type": "string",
-			"enum": []any{"critical", "high", "medium", "low"},
-		},
-		"priority": map[string]any{
-			"type":        "integer",
-			"description": "Scheduling priority from 1 (lowest) to 10 (highest)",
+			"enum": []any{"accept", "deny"},
 		},
 		"reasoning": map[string]any{
 			"type":        "string",
-			"description": "One-sentence explanation of the severity assignment",
+			"description": "Explanation of why the request is accepted or denied per company policy",
+		},
+		"applicable_policy": map[string]any{
+			"type":        "string",
+			"description": "The specific policy section that applies",
 		},
 	},
-	"required": []any{"severity", "priority", "reasoning"},
+	"required": []any{"decision", "reasoning", "applicable_policy"},
 }
 
-var escalationSchema = map[string]any{
+var replyConfirmationSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"escalate": map[string]any{
+		"email_sent": map[string]any{
 			"type":        "boolean",
-			"description": "Whether this ticket requires human escalation",
+			"description": "Whether the reply email was sent successfully",
 		},
-		"reason": map[string]any{
+		"summary": map[string]any{
 			"type":        "string",
-			"description": "One-sentence explanation of the escalation decision",
-		},
-		"suggested_team": map[string]any{
-			"type": "string",
-			"enum": []any{"billing", "technical", "account_management", "none"},
+			"description": "Brief summary of the reply that was sent",
 		},
 	},
-	"required": []any{"escalate", "reason", "suggested_team"},
+	"required": []any{"email_sent", "summary"},
+}
+
+// ---------------------------------------------------------------------------
+// Mock tool implementations
+// ---------------------------------------------------------------------------
+
+// readPolicyYAMLTool simulates reading the company policy document.
+func readPolicyYAMLTool() (*orla.Tool, error) {
+	return orla.NewTool(
+		"read_policy_yaml",
+		"Read the company support policy document for a given category. Returns the policy rules as structured text.",
+		orla.ToolSchema{
+			"type": "object",
+			"properties": map[string]any{
+				"category": map[string]any{
+					"type":        "string",
+					"description": "The ticket category to look up policy for (e.g. billing, technical, account, shipping)",
+				},
+			},
+			"required": []any{"category"},
+		},
+		nil,
+		orla.ToolRunnerFromSchema(func(_ context.Context, input orla.ToolSchema) (orla.ToolSchema, error) {
+			category, _ := input["category"].(string)
+			policies := map[string]string{
+				"billing": `policy:
+  billing:
+    duplicate_charges:
+      action: refund
+      conditions:
+        - verified_duplicate: true
+        - within_days: 30
+      sla: "Refund processed within 3 business days"
+    subscription_cancellation:
+      action: cancel_and_prorate
+      conditions:
+        - active_subscription: true
+      sla: "Effective end of current billing cycle"`,
+				"technical": `policy:
+  technical:
+    service_degradation:
+      action: investigate_and_credit
+      conditions:
+        - confirmed_outage: true
+        - duration_minutes: ">15"
+      sla: "Resolution within 4 hours, credit if SLA missed"
+    bug_report:
+      action: escalate_to_engineering
+      conditions:
+        - reproducible: true
+      sla: "Acknowledgment within 24 hours"`,
+				"account": `policy:
+  account:
+    access_issues:
+      action: reset_and_verify
+      sla: "Resolved within 1 hour"
+    data_request:
+      action: export_data
+      conditions:
+        - identity_verified: true
+      sla: "Data export within 48 hours"`,
+				"shipping": `policy:
+  shipping:
+    lost_package:
+      action: reship_or_refund
+      conditions:
+        - tracking_shows_lost: true
+      sla: "Replacement shipped within 2 business days"`,
+			}
+			policy, ok := policies[category]
+			if !ok {
+				policy = "No specific policy found for category: " + category + ". Apply general support guidelines."
+			}
+			return orla.ToolSchema{"policy_document": policy}, nil
+		}),
+	)
+}
+
+// sendEmailTool simulates sending an email to the customer.
+func sendEmailTool() (*orla.Tool, error) {
+	return orla.NewTool(
+		"send_email",
+		"Send an email to a recipient with the given subject and body.",
+		orla.ToolSchema{
+			"type": "object",
+			"properties": map[string]any{
+				"to": map[string]any{
+					"type":        "string",
+					"description": "Recipient email address",
+				},
+				"subject": map[string]any{
+					"type":        "string",
+					"description": "Email subject line",
+				},
+				"body": map[string]any{
+					"type":        "string",
+					"description": "Email body text",
+				},
+			},
+			"required": []any{"to", "subject", "body"},
+		},
+		nil,
+		orla.ToolRunnerFromSchema(func(_ context.Context, input orla.ToolSchema) (orla.ToolSchema, error) {
+			to, _ := input["to"].(string)
+			subject, _ := input["subject"].(string)
+			log.Printf("[send_email] To: %s | Subject: %s", to, subject)
+			return orla.ToolSchema{
+				"status":     "sent",
+				"message_id": "msg-" + to + "-001",
+			}, nil
+		}),
+	)
+}
+
+// readTeamDescriptionsTool simulates reading internal team descriptions.
+func readTeamDescriptionsTool() (*orla.Tool, error) {
+	return orla.NewTool(
+		"read_team_descriptions",
+		"Read descriptions of internal support teams to determine the best routing destination.",
+		orla.ToolSchema{
+			"type": "object",
+			"properties": map[string]any{},
+		},
+		nil,
+		orla.ToolRunnerFromSchema(func(_ context.Context, _ orla.ToolSchema) (orla.ToolSchema, error) {
+			return orla.ToolSchema{
+				"teams": []any{
+					map[string]any{
+						"name":        "billing_ops",
+						"description": "Handles refunds, subscription changes, payment disputes, and invoice corrections.",
+						"email":       "billing-ops@company.com",
+					},
+					map[string]any{
+						"name":        "technical_support",
+						"description": "Handles service outages, performance issues, bug reports, and API problems.",
+						"email":       "tech-support@company.com",
+					},
+					map[string]any{
+						"name":        "account_management",
+						"description": "Handles account access, data requests, plan upgrades, and enterprise onboarding.",
+						"email":       "account-mgmt@company.com",
+					},
+					map[string]any{
+						"name":        "escalation_team",
+						"description": "Handles critical/VIP issues, multi-department problems, and unresolved complaints.",
+						"email":       "escalation@company.com",
+					},
+				},
+			}, nil
+		}),
+	)
+}
+
+// sendTicketTool simulates sending an internal support ticket to a team.
+func sendTicketTool() (*orla.Tool, error) {
+	return orla.NewTool(
+		"send_ticket",
+		"Create and send an internal support ticket to the designated team.",
+		orla.ToolSchema{
+			"type": "object",
+			"properties": map[string]any{
+				"team": map[string]any{
+					"type":        "string",
+					"description": "The team to route the ticket to",
+				},
+				"priority": map[string]any{
+					"type":        "string",
+					"enum":        []any{"critical", "high", "medium", "low"},
+					"description": "Ticket priority level",
+				},
+				"summary": map[string]any{
+					"type":        "string",
+					"description": "Brief summary of the issue for the internal ticket",
+				},
+				"customer_email": map[string]any{
+					"type":        "string",
+					"description": "Customer email for follow-up",
+				},
+			},
+			"required": []any{"team", "priority", "summary"},
+		},
+		nil,
+		orla.ToolRunnerFromSchema(func(_ context.Context, input orla.ToolSchema) (orla.ToolSchema, error) {
+			team, _ := input["team"].(string)
+			priority, _ := input["priority"].(string)
+			log.Printf("[send_ticket] Team: %s | Priority: %s", team, priority)
+			return orla.ToolSchema{
+				"ticket_id": "TKT-" + team + "-42",
+				"status":    "created",
+			}, nil
+		}),
+	)
 }
 
 func envOr(key, fallback string) string {
@@ -148,13 +330,15 @@ func Run(ctx context.Context, ticket string) error {
 		return fmt.Errorf("register heavy backend: %w", err)
 	}
 
+	noThinking := map[string]any{"enable_thinking": false}
 	wf := orla.NewWorkflow(client)
 
-	// --- Triage stages (light model, diamond DAG) ---
+	// -----------------------------------------------------------------------
+	// Stage 1: classify (single-shot, structured output, light model)
 	//
-	//   classify ──┐
-	//              ├──▶ prioritize
-	//   sentiment ─┘
+	//   Input:  Email + System Prompt
+	//   Output: Structured JSON {category, product, key_issue, customer_request}
+	// -----------------------------------------------------------------------
 
 	classifyStage := orla.NewStage("classify", lightBackend)
 	classifyStage.SetMaxTokens(512)
@@ -162,145 +346,166 @@ func Run(ctx context.Context, ticket string) error {
 	classifyStage.SetSchedulingPolicy(orla.SchedulingPolicyFCFS)
 	classifyStage.SetResponseFormat(orla.NewStructuredOutputRequest("ticket_classify", classifySchema))
 	classifyStage.Prompt = fmt.Sprintf(
-		"You are a customer support triage system. Classify this support ticket: extract the category, product, and a one-sentence summary of the core issue.\n\nTicket:\n%s", ticket)
+		"You are a customer support triage system. Classify this support ticket.\n"+
+			"Extract the category, product, a one-sentence summary of the core issue, "+
+			"and what the customer is actually asking for.\n\nTicket:\n%s", ticket)
 
-	sentimentStage := orla.NewStage("sentiment", lightBackend)
-	sentimentStage.SetMaxTokens(256)
-	sentimentStage.SetTemperature(0)
-	sentimentStage.SetSchedulingPolicy(orla.SchedulingPolicyFCFS)
-	sentimentStage.SetResponseFormat(orla.NewStructuredOutputRequest("ticket_sentiment", sentimentSchema))
-	sentimentStage.Prompt = fmt.Sprintf(
-		"You are a customer support sentiment analyzer. Determine the customer's sentiment and list any phrases that signal urgency.\n\nTicket:\n%s", ticket)
+	// -----------------------------------------------------------------------
+	// Stage 2: policy_check (agent-loop, tool: read_policy_yaml, heavy model)
+	//
+	//   Input:  Email + Output(classify) + System Prompt
+	//   Flow:   Gen → Tool(read_policy_yaml) → Gen → Structured Output
+	//   Output: {decision: accept|deny, reasoning, applicable_policy}
+	//   Depends on: classify
+	// -----------------------------------------------------------------------
 
-	prioritizeStage := orla.NewStage("prioritize", lightBackend)
-	prioritizeStage.SetMaxTokens(256)
-	prioritizeStage.SetTemperature(0)
-	prioritizeStage.SetSchedulingPolicy(orla.SchedulingPolicyFCFS)
-	prioritizeStage.SetResponseFormat(orla.NewStructuredOutputRequest("ticket_priority", prioritySchema))
-	prioritizeStage.SetPromptBuilder(func(results map[string]*orla.StageResult) (string, error) {
+	policyTool, err := readPolicyYAMLTool()
+	if err != nil {
+		return fmt.Errorf("create read_policy_yaml tool: %w", err)
+	}
+
+	policyStage := orla.NewStage("policy_check", heavyBackend)
+	policyStage.SetExecutionMode(orla.ExecutionModeAgentLoop)
+	policyStage.SetMaxTurns(5)
+	policyStage.SetMaxTokens(1024)
+	policyStage.SetTemperature(0)
+	policyStage.SetSchedulingPolicy(orla.SchedulingPolicyPriority)
+	policyStage.SetChatTemplateKwargs(noThinking)
+	policyStage.SetResponseFormat(orla.NewStructuredOutputRequest("policy_decision", policyDecisionSchema))
+	if err := policyStage.AddTool(policyTool); err != nil {
+		return fmt.Errorf("add read_policy_yaml tool: %w", err)
+	}
+	policyStage.SetPromptBuilder(func(results map[string]*orla.StageResult) (string, error) {
 		classification, ok := results[classifyStage.ID]
 		if !ok {
 			return "", fmt.Errorf("missing classify stage result")
 		}
-		sentiment, ok := results[sentimentStage.ID]
-		if !ok {
-			return "", fmt.Errorf("missing sentiment stage result")
-		}
 		return fmt.Sprintf(
-			"Given this ticket classification and sentiment analysis, assign a severity (critical / high / medium / low) and a scheduling priority from 1 (lowest) to 10 (highest). Explain why in one sentence.\n\nClassification:\n%s\n\nSentiment:\n%s",
-			classification.Response.Content, sentiment.Response.Content), nil
+			"You are a support policy specialist. You have access to a tool called "+
+				"read_policy_yaml that lets you look up the company's support policy for a "+
+				"given category.\n\n"+
+				"Step 1: Use the read_policy_yaml tool to retrieve the policy for the ticket's category.\n"+
+				"Step 2: Based on the policy, decide whether to ACCEPT or DENY the customer's request.\n\n"+
+				"Ticket Classification:\n%s\n\nOriginal Ticket:\n%s",
+			classification.Response.Content, ticket), nil
 	})
 
-	// --- Resolver stages (heavy model, diamond DAG) ---
+	// -----------------------------------------------------------------------
+	// Stage 3: reply (agent-loop, tool: send_email, heavy model)
 	//
-	//   draft_response ──┐
-	//                    ├──▶ final_review
-	//   policy_check ────┘
+	//   Input:  Output(policy_check) + Output(classify) + Email + System Prompt
+	//   Flow:   Gen → Tool(send_email) → Gen → Structured Output
+	//   Output: {email_sent, summary}
+	//   Depends on: policy_check
+	// -----------------------------------------------------------------------
 
-	noThinking := map[string]any{"enable_thinking": false}
+	emailTool, err := sendEmailTool()
+	if err != nil {
+		return fmt.Errorf("create send_email tool: %w", err)
+	}
 
-	draftStage := orla.NewStage("draft_response", heavyBackend)
-	draftStage.SetMaxTokens(1024)
-	draftStage.SetTemperature(0.3)
-	draftStage.SetSchedulingPolicy(orla.SchedulingPolicyPriority)
-	draftStage.SetChatTemplateKwargs(noThinking)
-	draftStage.SetPromptBuilder(func(results map[string]*orla.StageResult) (string, error) {
-		var triageOutput string
-		for _, id := range []string{classifyStage.ID, sentimentStage.ID, prioritizeStage.ID} {
-			if r, ok := results[id]; ok && r.Response != nil {
-				triageOutput += r.Response.Content + "\n"
-			}
-		}
-		priority := 5
-		if pr, ok := results[prioritizeStage.ID]; ok && pr.Response != nil {
-			var p struct {
-				Priority int `json:"priority"`
-			}
-			if err := json.Unmarshal([]byte(pr.Response.Content), &p); err == nil && p.Priority > 0 {
-				priority = p.Priority
-			}
-		}
-		draftStage.SetSchedulingHints(&orla.SchedulingHints{Priority: &priority})
-		return fmt.Sprintf(
-			"You are a customer support agent. Write a helpful, professional reply to this customer based on the triage analysis below. Address their specific issue, apologize if appropriate, and provide clear next steps.\n\nTriage Analysis:\n%s\n\nOriginal Ticket:\n%s",
-			triageOutput, ticket), nil
-	})
-
-	policyStage := orla.NewStage("policy_check", heavyBackend)
-	policyStage.SetMaxTokens(512)
-	policyStage.SetTemperature(0)
-	policyStage.SetSchedulingPolicy(orla.SchedulingPolicyPriority)
-	policyStage.SetChatTemplateKwargs(noThinking)
-	policyStage.SetPromptBuilder(func(results map[string]*orla.StageResult) (string, error) {
-		classifyOutput := ""
-		sentimentOutput := ""
-		if cr, ok := results[classifyStage.ID]; ok && cr.Response != nil {
-			classifyOutput = cr.Response.Content
-		}
-		if sr, ok := results[sentimentStage.ID]; ok && sr.Response != nil {
-			sentimentOutput = sr.Response.Content
-		}
-		priority := 5
-		if pr, ok := results[prioritizeStage.ID]; ok && pr.Response != nil {
-			var p struct {
-				Priority int `json:"priority"`
-			}
-			if err := json.Unmarshal([]byte(pr.Response.Content), &p); err == nil && p.Priority > 0 {
-				priority = p.Priority
-			}
-		}
-		policyStage.SetSchedulingHints(&orla.SchedulingHints{Priority: &priority})
-		return fmt.Sprintf(
-			"You are a support policy specialist. Given the ticket classification and sentiment below, identify all applicable support policies, refund rules, SLA commitments, and any constraints the response agent must follow.\n\nClassification:\n%s\n\nSentiment:\n%s\n\nOriginal Ticket:\n%s",
-			classifyOutput, sentimentOutput, ticket), nil
-	})
-
-	reviewStage := orla.NewStage("final_review", heavyBackend)
-	reviewStage.SetMaxTokens(512)
-	reviewStage.SetTemperature(0)
-	reviewStage.SetSchedulingPolicy(orla.SchedulingPolicyPriority)
-	reviewStage.SetChatTemplateKwargs(noThinking)
-	reviewStage.SetPromptBuilder(func(results map[string]*orla.StageResult) (string, error) {
-		draft, ok := results[draftStage.ID]
+	replyStage := orla.NewStage("reply", heavyBackend)
+	replyStage.SetExecutionMode(orla.ExecutionModeAgentLoop)
+	replyStage.SetMaxTurns(5)
+	replyStage.SetMaxTokens(1024)
+	replyStage.SetTemperature(0.3)
+	replyStage.SetSchedulingPolicy(orla.SchedulingPolicyPriority)
+	replyStage.SetChatTemplateKwargs(noThinking)
+	replyStage.SetResponseFormat(orla.NewStructuredOutputRequest("reply_confirmation", replyConfirmationSchema))
+	if err := replyStage.AddTool(emailTool); err != nil {
+		return fmt.Errorf("add send_email tool to reply: %w", err)
+	}
+	replyStage.SetPromptBuilder(func(results map[string]*orla.StageResult) (string, error) {
+		classification, ok := results[classifyStage.ID]
 		if !ok {
-			return "", fmt.Errorf("missing draft_response stage result")
+			return "", fmt.Errorf("missing classify stage result")
 		}
-		policies, ok := results[policyStage.ID]
+		policyResult, ok := results[policyStage.ID]
 		if !ok {
 			return "", fmt.Errorf("missing policy_check stage result")
 		}
+
+		var classifyData struct {
+			Category string `json:"category"`
+		}
+		_ = json.Unmarshal([]byte(classification.Response.Content), &classifyData)
+		priority := 5
+		if classifyData.Category == "billing" || classifyData.Category == "technical" {
+			priority = 8
+		}
+		replyStage.SetSchedulingHints(&orla.SchedulingHints{Priority: &priority})
+
 		return fmt.Sprintf(
-			"You are a QA reviewer for customer support responses. Review this draft reply against the applicable policies below. Check for: (1) policy compliance, (2) professional tone, (3) completeness. If it passes, output APPROVED followed by a brief summary. If not, explain what to fix.\n\nDraft Reply:\n%s\n\nApplicable Policies:\n%s",
-			draft.Response.Content, policies.Response.Content), nil
+			"You are a customer support agent. Based on the policy decision and ticket "+
+				"classification below, compose a professional reply to the customer and send "+
+				"it using the send_email tool.\n\n"+
+				"If the request is ACCEPTED, confirm the action being taken and provide an ETA.\n"+
+				"If DENIED, explain why politely and offer alternatives.\n\n"+
+				"Extract the customer's email from the original ticket for the 'to' field.\n\n"+
+				"Policy Decision:\n%s\n\nTicket Classification:\n%s\n\nOriginal Ticket:\n%s",
+			policyResult.Response.Content, classification.Response.Content, ticket), nil
 	})
 
-	// --- Escalation stage (light model, depends on prioritize, parallel with resolver) ---
+	// -----------------------------------------------------------------------
+	// Stage 4: route_ticket (agent-loop, tools: send_email, read_team_descriptions,
+	//          send_ticket; heavy model)
+	//
+	//   Input:  Output(classify) + Email + System Prompt
+	//   Flow:   Gen → Tool(send_email) → Gen → Tool(read_team_descriptions) → Gen
+	//           → Tool(send_ticket) → Gen → Output(summary)
+	//   Output: Free-text summary
+	//   Depends on: classify
+	// -----------------------------------------------------------------------
 
-	routeStage := orla.NewStage("route_ticket", lightBackend)
-	routeStage.SetMaxTokens(256)
+	emailToolRoute, err := sendEmailTool()
+	if err != nil {
+		return fmt.Errorf("create send_email tool for route: %w", err)
+	}
+	teamsTool, err := readTeamDescriptionsTool()
+	if err != nil {
+		return fmt.Errorf("create read_team_descriptions tool: %w", err)
+	}
+	ticketTool, err := sendTicketTool()
+	if err != nil {
+		return fmt.Errorf("create send_ticket tool: %w", err)
+	}
+
+	routeStage := orla.NewStage("route_ticket", heavyBackend)
+	routeStage.SetExecutionMode(orla.ExecutionModeAgentLoop)
+	routeStage.SetMaxTurns(10)
+	routeStage.SetMaxTokens(1024)
 	routeStage.SetTemperature(0)
-	routeStage.SetSchedulingPolicy(orla.SchedulingPolicyFCFS)
-	routeStage.SetResponseFormat(orla.NewStructuredOutputRequest("ticket_escalation", escalationSchema))
+	routeStage.SetSchedulingPolicy(orla.SchedulingPolicyPriority)
+	routeStage.SetChatTemplateKwargs(noThinking)
+	if err := routeStage.AddTool(emailToolRoute); err != nil {
+		return fmt.Errorf("add send_email tool to route: %w", err)
+	}
+	if err := routeStage.AddTool(teamsTool); err != nil {
+		return fmt.Errorf("add read_team_descriptions tool: %w", err)
+	}
+	if err := routeStage.AddTool(ticketTool); err != nil {
+		return fmt.Errorf("add send_ticket tool: %w", err)
+	}
 	routeStage.SetPromptBuilder(func(results map[string]*orla.StageResult) (string, error) {
-		classifyOutput := ""
-		sentimentOutput := ""
-		prioritizeOutput := ""
-		if cr, ok := results[classifyStage.ID]; ok && cr.Response != nil {
-			classifyOutput = cr.Response.Content
-		}
-		if sr, ok := results[sentimentStage.ID]; ok && sr.Response != nil {
-			sentimentOutput = sr.Response.Content
-		}
-		if pr, ok := results[prioritizeStage.ID]; ok && pr.Response != nil {
-			prioritizeOutput = pr.Response.Content
+		classification, ok := results[classifyStage.ID]
+		if !ok {
+			return "", fmt.Errorf("missing classify stage result")
 		}
 		return fmt.Sprintf(
-			"You are a support escalation router. Based on the triage analysis below, decide whether this ticket requires human escalation. Consider the severity, customer sentiment, and whether the issue can be resolved automatically.\n\nClassification:\n%s\n\nSentiment:\n%s\n\nPriority Assessment:\n%s\n\nOriginal Ticket:\n%s",
-			classifyOutput, sentimentOutput, prioritizeOutput, ticket), nil
+			"You are an internal support ticket router. Your job is to:\n\n"+
+				"1. Send an acknowledgment email to the customer confirming their ticket was received "+
+				"(use the send_email tool; extract the customer's email from the original ticket).\n"+
+				"2. Read the available team descriptions (use the read_team_descriptions tool) "+
+				"to determine which team should handle this ticket.\n"+
+				"3. Create an internal support ticket routed to the appropriate team "+
+				"(use the send_ticket tool).\n\n"+
+				"After completing all steps, provide a brief summary of what was done.\n\n"+
+				"Ticket Classification:\n%s\n\nOriginal Ticket:\n%s",
+			classification.Response.Content, ticket), nil
 	})
 
 	// --- Add all stages ---
-	allStages := []*orla.Stage{classifyStage, sentimentStage, prioritizeStage, draftStage, policyStage, reviewStage, routeStage}
+	allStages := []*orla.Stage{classifyStage, policyStage, replyStage, routeStage}
 	for _, s := range allStages {
 		if err := wf.AddStage(s); err != nil {
 			return err
@@ -322,53 +527,61 @@ func Run(ctx context.Context, ticket string) error {
 	log.Printf("Stage mapping validated: %d stages assigned to backends", len(output.Assignments))
 
 	// --- Dependencies ---
-	// Triage diamond: classify & sentiment -> prioritize
-	if err := wf.AddDependency(prioritizeStage.ID, classifyStage.ID); err != nil {
+	//   classify → policy_check → reply
+	//   classify → route_ticket
+	if err := wf.AddDependency(policyStage.ID, classifyStage.ID); err != nil {
 		return err
 	}
-	if err := wf.AddDependency(prioritizeStage.ID, sentimentStage.ID); err != nil {
+	if err := wf.AddDependency(replyStage.ID, policyStage.ID); err != nil {
 		return err
 	}
-	// Resolver stages depend on prioritize (and transitively on classify/sentiment via PromptBuilder)
-	if err := wf.AddDependency(draftStage.ID, prioritizeStage.ID); err != nil {
-		return err
-	}
-	if err := wf.AddDependency(policyStage.ID, prioritizeStage.ID); err != nil {
-		return err
-	}
-	// Review depends on both draft and policy
-	if err := wf.AddDependency(reviewStage.ID, draftStage.ID); err != nil {
-		return err
-	}
-	if err := wf.AddDependency(reviewStage.ID, policyStage.ID); err != nil {
-		return err
-	}
-	// Escalation depends on prioritize (parallel with resolver stages)
-	if err := wf.AddDependency(routeStage.ID, prioritizeStage.ID); err != nil {
+	if err := wf.AddDependency(routeStage.ID, classifyStage.ID); err != nil {
 		return err
 	}
 
 	// --- Execute ---
 	log.Println("Executing customer support workflow...")
+	log.Println("  Stage DAG:")
+	log.Println("    classify ──┬──▶ policy_check ──▶ reply")
+	log.Println("               └──▶ route_ticket")
 	results, err := wf.Execute(ctx)
 	if err != nil {
 		return fmt.Errorf("workflow execution: %w", err)
 	}
 
 	// --- Print results ---
-	stageNames := make(map[string]string, len(allStages))
-	for _, s := range allStages {
-		stageNames[s.ID] = s.Name
+	stageOrder := []struct {
+		id   string
+		name string
+	}{
+		{classifyStage.ID, "classify"},
+		{policyStage.ID, "policy_check"},
+		{replyStage.ID, "reply"},
+		{routeStage.ID, "route_ticket"},
 	}
-	for stageID, stageResult := range results {
-		name := stageNames[stageID]
-		log.Printf("  %s (stage id: %s):", name, stageID)
-		if stageResult.Response != nil {
-			content := stageResult.Response.Content
+	for _, s := range stageOrder {
+		result, ok := results[s.id]
+		if !ok {
+			continue
+		}
+		log.Printf("  %s:", s.name)
+		if result.Response != nil {
+			content := result.Response.Content
 			if len(content) > 500 {
 				content = content[:500] + "..."
 			}
 			log.Printf("    %s", content)
+		}
+		if len(result.Messages) > 0 {
+			toolCalls := 0
+			for _, msg := range result.Messages {
+				if msg.Role == "tool" {
+					toolCalls++
+				}
+			}
+			if toolCalls > 0 {
+				log.Printf("    (tool calls executed: %d)", toolCalls)
+			}
 		}
 	}
 
