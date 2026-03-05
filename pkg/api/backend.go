@@ -9,8 +9,9 @@ func randomBackendName() string {
 }
 
 const (
-	backendTypeOpenAI = "openai"
-	backendTypeOllama = "ollama"
+	backendTypeOpenAI  = "openai"
+	backendTypeOllama  = "ollama"
+	backendTypeSGLang  = "sglang"
 )
 
 func modelIDForBackendType(backendType string, modelID string) string {
@@ -56,8 +57,8 @@ func NewSGLangBackend(modelID string, endpoint string) *LLMBackend {
 	return &LLMBackend{
 		Name:     randomBackendName(),
 		Endpoint: endpoint,
-		Type:     backendTypeOpenAI,
-		ModelID:  modelIDForBackendType(backendTypeOpenAI, modelID),
+		Type:     backendTypeSGLang,
+		ModelID:  modelIDForBackendType(backendTypeOpenAI, modelID), // OpenAI-compatible API
 	}
 }
 

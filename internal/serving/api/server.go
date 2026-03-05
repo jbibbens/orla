@@ -51,6 +51,7 @@ func (s *AgenticServer) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/execute", s.handleExecute)
 	s.mux.HandleFunc("POST /api/v1/backends", s.handleRegisterBackend)
 	s.mux.HandleFunc("GET /api/v1/backends", s.handleListBackends)
+	s.mux.HandleFunc("POST /api/v1/workflow/complete", s.handleWorkflowComplete)
 }
 
 // Start starts the HTTP server
@@ -287,4 +288,38 @@ func (s *AgenticServer) handleListBackends(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	core.WriteJSONResponse(w, ListBackendsResponse{Backends: names})
+}
+
+// WorkflowCompleteRequest is the request body for the workflow/complete endpoint.
+type WorkflowCompleteRequest struct {
+	WorkflowID string   `json:"workflow_id"`
+	Backends   []string `json:"backends"`
+}
+
+// WorkflowCompleteResponse is the response body for the workflow/complete endpoint.
+type WorkflowCompleteResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+}
+
+func (s *AgenticServer) handleWorkflowComplete(w http.ResponseWriter, r *http.Request) {
+	var req WorkflowCompleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.WorkflowID == "" {
+		http.Error(w, "workflow_id is required", http.StatusBadRequest)
+		return
+	}
+
+	s.layer.NotifyWorkflowComplete(r.Context(), req.WorkflowID, req.Backends)
+
+	zap.L().Debug("Workflow complete notification",
+		zap.String("workflow_id", req.WorkflowID),
+		zap.Strings("backends", req.Backends))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	core.WriteJSONResponse(w, WorkflowCompleteResponse{Success: true})
 }

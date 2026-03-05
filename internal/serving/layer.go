@@ -79,3 +79,26 @@ func (l *AgenticLayer) GetLLMBackendHealth(ctx context.Context, serverName strin
 func (l *AgenticLayer) ListLLMBackends() []string {
 	return l.llmBackendManager.ListLLMBackends()
 }
+
+// NotifyWorkflowComplete emits TransitionWorkflowComplete signals for each
+// backend the workflow used, then deregisters the workflow from the tracker.
+func (l *AgenticLayer) NotifyWorkflowComplete(ctx context.Context, workflowID string, backends []string) {
+	if l.MemoryManager == nil {
+		return
+	}
+	for _, backend := range backends {
+		l.MemoryManager.OnTransition(ctx, memory.StageTransition{
+			TransitionType: memory.TransitionWorkflowComplete,
+			WorkflowID:     workflowID,
+			Backend:        backend,
+		})
+	}
+	l.MemoryManager.DeregisterWorkflow(workflowID)
+}
+
+// StartPressureMonitor launches the background memory pressure polling loop.
+// It dynamically queries the current set of backends on each tick and stops
+// when ctx is cancelled.
+func (l *AgenticLayer) StartPressureMonitor(ctx context.Context) {
+	go l.MemoryManager.StartPressureMonitor(ctx, l.llmBackendManager.ListLLMBackends, 0)
+}

@@ -129,6 +129,7 @@ func (e *backendExecutor) worker() {
 
 		requestID := fmt.Sprintf("%s-%s-%d", req.backend, req.stageName, req.enqueuedAt.UnixNano())
 		if e.memoryManager != nil && req.workflowID != "" {
+			e.memoryManager.RegisterWorkflow(req.workflowID)
 			e.memoryManager.RecordInflight(memory.InflightRequest{
 				RequestID:  requestID,
 				WorkflowID: req.workflowID,
@@ -136,6 +137,15 @@ func (e *backendExecutor) worker() {
 				Backend:    req.backend,
 				Streaming:  req.opts.Stream,
 				StartedAt:  time.Now(),
+			})
+			modelID := e.manager.GetModelID(req.backend)
+			e.memoryManager.OnTransition(req.ctx, memory.StageTransition{
+				TransitionType: memory.TransitionStageStart,
+				WorkflowID:     req.workflowID,
+				StageID:        req.stageName,
+				Backend:        req.backend,
+				Model:          modelID,
+				CachePolicy:    req.cachePolicy,
 			})
 		}
 
@@ -146,6 +156,14 @@ func (e *backendExecutor) worker() {
 
 		if e.memoryManager != nil && req.workflowID != "" && !req.opts.Stream {
 			e.memoryManager.ClearInflight(req.backend, requestID)
+			e.memoryManager.OnTransition(req.ctx, memory.StageTransition{
+				TransitionType: memory.TransitionStageComplete,
+				WorkflowID:     req.workflowID,
+				StageID:        req.stageName,
+				Backend:        req.backend,
+				Model:          e.manager.GetModelID(req.backend),
+				CachePolicy:    req.cachePolicy,
+			})
 		}
 
 		if err != nil {

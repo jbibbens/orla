@@ -70,9 +70,13 @@ func NewTracker() *Tracker {
 }
 
 // RegisterWorkflow initializes tracking for a new workflow execution.
+// Idempotent: calling with an already-registered workflowID is a no-op.
 func (t *Tracker) RegisterWorkflow(workflowID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if _, exists := t.workflows[workflowID]; exists {
+		return
+	}
 	now := time.Now()
 	t.workflows[workflowID] = &WorkflowState{
 		ID:              workflowID,

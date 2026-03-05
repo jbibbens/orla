@@ -3,6 +3,7 @@ package serving
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,10 +55,21 @@ func (m *LLMBackendManager) AddLLMBackend(name string, backend *core.LLMBackend,
 	}
 
 	if m.memoryManager != nil && backend.Type == core.LLMInferenceAPITypeSGLang {
-		cc := memory.NewSGLangCacheController(backend.Endpoint)
+		baseURL := strings.TrimSuffix(strings.TrimRight(backend.Endpoint, "/"), "/v1")
+		cc := memory.NewSGLangCacheController(baseURL)
 		m.memoryManager.RegisterCacheController(name, cc)
 		zap.L().Debug("Registered SGLang cache controller for backend", zap.String("backend", name))
 	}
+}
+
+// GetModelID returns the modelID string for a registered backend, or "" if not found.
+func (m *LLMBackendManager) GetModelID(backendName string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if entry, ok := m.backends[backendName]; ok {
+		return entry.modelID
+	}
+	return ""
 }
 
 // GetModelProvider returns a cached provider for an LLM backend, creating it if necessary

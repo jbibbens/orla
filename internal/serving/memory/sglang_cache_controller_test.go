@@ -15,7 +15,7 @@ import (
 func TestSGLangCacheController_FlushPrefix_Success(t *testing.T) {
 	var called atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/flush_cache" && r.Method == http.MethodPost {
+		if r.URL.Path == sglangPathFlush && r.Method == http.MethodPost {
 			called.Store(true)
 			w.WriteHeader(http.StatusOK)
 			return
@@ -56,7 +56,7 @@ func TestSGLangCacheController_MemoryUsage_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/get_server_info" && r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(info)
+			require.NoError(t, json.NewEncoder(w).Encode(info))
 			return
 		}
 		http.NotFound(w, r)
@@ -86,7 +86,8 @@ func TestSGLangCacheController_MemoryUsage_ServerError(t *testing.T) {
 func TestSGLangCacheController_MemoryUsage_BadJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("not json"))
+		_, err := w.Write([]byte("not json"))
+		require.NoError(t, err)
 	}))
 	defer srv.Close()
 
@@ -99,7 +100,7 @@ func TestSGLangCacheController_MemoryUsage_BadJSON(t *testing.T) {
 func TestDefaultManager_FlushCallsCacheController(t *testing.T) {
 	var flushed atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/flush_cache" {
+		if r.URL.Path == sglangPathFlush {
 			flushed.Store(true)
 			w.WriteHeader(http.StatusOK)
 			return
@@ -125,7 +126,7 @@ func TestDefaultManager_FlushCallsCacheController(t *testing.T) {
 func TestDefaultManager_FlushSkippedWhenOtherInflight(t *testing.T) {
 	var flushed atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/flush_cache" {
+		if r.URL.Path == sglangPathFlush {
 			flushed.Store(true)
 			w.WriteHeader(http.StatusOK)
 			return

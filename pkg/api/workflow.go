@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/docker/docker/pkg/namesgenerator"
+	"go.uber.org/zap"
 )
 
 // AgentResult wraps the output of an agent's DAG execution.
@@ -81,6 +82,35 @@ func (w *Workflow) AddDependency(agentName, dependsOnAgentName string) error {
 	}
 	w.dependencies[agentName] = append(w.dependencies[agentName], dependsOnAgentName)
 	return nil
+}
+
+// notifyWorkflowComplete sends a best-effort notification to the server so the
+// Memory Manager can flush caches and clean up workflow tracking.
+func (w *Workflow) notifyWorkflowComplete(ctx context.Context, workflowID string) {
+	var client *OrlaClient
+	backends := make(map[string]struct{})
+	for _, agent := range w.agents {
+		if agent.Client != nil {
+			client = agent.Client
+		}
+		for _, stage := range agent.stages {
+			if stage.Backend != nil && stage.Backend.Name != "" {
+				backends[stage.Backend.Name] = struct{}{}
+			}
+		}
+	}
+	if client == nil || len(backends) == 0 {
+		return
+	}
+	backendList := make([]string, 0, len(backends))
+	for b := range backends {
+		backendList = append(backendList, b)
+	}
+	if err := client.WorkflowComplete(ctx, workflowID, backendList); err != nil {
+		zap.L().Debug("Memory manager: workflow complete notification failed",
+			zap.String("workflow_id", workflowID),
+			zap.Error(err))
+	}
 }
 
 // Agents returns all agents keyed by name.
@@ -226,5 +256,7 @@ func (w *Workflow) Execute(ctx context.Context) (map[string]*AgentResult, error)
 	if dispatched != len(w.agents) {
 		return nil, fmt.Errorf("workflow has a cycle; dispatched %d/%d agents", dispatched, len(w.agents))
 	}
+
+	w.notifyWorkflowComplete(ctx, workflowID)
 	return results, nil
 }

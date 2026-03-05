@@ -46,9 +46,9 @@ type DefaultManagerConfig struct {
 // the three paper policies (preserve on small increment, flush at boundary,
 // flush under pressure) with workflow state tracking and in-flight awareness.
 type DefaultManager struct {
-	tracker         *Tracker
-	chain           *PolicyChain
-	pressurePolicy  *FlushUnderPressurePolicy
+	tracker          *Tracker
+	chain            *PolicyChain
+	pressurePolicy   *FlushUnderPressurePolicy
 	cacheControllers map[string]CacheController
 	mu               sync.RWMutex
 }
@@ -206,10 +206,13 @@ func (m *DefaultManager) logAction(signal StageTransition, action CacheAction) {
 		zap.String("reason", action.Reason))
 }
 
-// StartPressureMonitor launches a goroutine that periodically queries backends
+// StartPressureMonitor launches a loop that periodically queries backends
 // for memory pressure and triggers flush actions. It blocks until ctx is cancelled.
-func (m *DefaultManager) StartPressureMonitor(ctx context.Context, backends []string, interval time.Duration) {
+// backendsFn is called on each tick to discover the current set of backends,
+// so dynamically registered backends are picked up automatically.
+func (m *DefaultManager) StartPressureMonitor(ctx context.Context, backendsFn func() []string, interval time.Duration) {
 	if interval <= 0 {
+		zap.L().Warn("Memory manager: pressure monitor interval is less than or equal to 0, setting to 2 seconds")
 		interval = 2 * time.Second
 	}
 	ticker := time.NewTicker(interval)
@@ -219,7 +222,7 @@ func (m *DefaultManager) StartPressureMonitor(ctx context.Context, backends []st
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			m.pollPressure(ctx, backends)
+			m.pollPressure(ctx, backendsFn())
 		}
 	}
 }

@@ -315,6 +315,38 @@ func parseSSEEvent(eventType, data string) *StreamEvent {
 	return nil
 }
 
+type workflowCompletePayload struct {
+	WorkflowID string   `json:"workflow_id"`
+	Backends   []string `json:"backends"`
+}
+
+// WorkflowComplete notifies the server that a workflow has finished so the
+// Memory Manager can flush caches and clean up tracking state.
+func (c *OrlaClient) WorkflowComplete(ctx context.Context, workflowID string, backends []string) error {
+	url := fmt.Sprintf("%s/api/v1/workflow/complete", c.baseURL)
+	body, err := json.Marshal(&workflowCompletePayload{
+		WorkflowID: workflowID,
+		Backends:   backends,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal workflow complete: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create workflow complete request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("workflow complete request: %w", err)
+	}
+	defer LogDeferredError(httpResp.Body.Close)
+	if httpResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("workflow complete failed with status %d", httpResp.StatusCode)
+	}
+	return nil
+}
+
 // Execute runs inference on the named backend via the daemon.
 func (c *OrlaClient) Execute(ctx context.Context, req *ExecuteRequest) (*InferenceResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/execute", c.baseURL)

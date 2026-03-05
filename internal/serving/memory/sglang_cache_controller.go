@@ -7,9 +7,14 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dorcha-inc/orla/internal/core"
 )
 
-const sglangHTTPTimeout = 5 * time.Second
+const (
+	sglangHTTPTimeout = 5 * time.Second
+	sglangPathFlush   = "/flush_cache"
+)
 
 // SGLangCacheController implements CacheController for SGLang backends.
 // It uses SGLang's /flush_cache and /get_server_info HTTP endpoints.
@@ -31,7 +36,7 @@ func NewSGLangCacheController(baseURL string) *SGLangCacheController {
 // SGLang's /flush_cache is a global operation; the sessionID parameter is
 // logged but not used for scoping because SGLang does not support per-session eviction.
 func (c *SGLangCacheController) FlushPrefix(ctx context.Context, _ string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/flush_cache", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+sglangPathFlush, nil)
 	if err != nil {
 		return fmt.Errorf("sglang flush: build request: %w", err)
 	}
@@ -39,7 +44,7 @@ func (c *SGLangCacheController) FlushPrefix(ctx context.Context, _ string) error
 	if err != nil {
 		return fmt.Errorf("sglang flush: %w", err)
 	}
-	defer resp.Body.Close()
+	defer core.LogDeferredError(resp.Body.Close)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("sglang flush: unexpected status %d", resp.StatusCode)
 	}
@@ -62,7 +67,7 @@ func (c *SGLangCacheController) MemoryUsage(ctx context.Context) (*MemoryStats, 
 	if err != nil {
 		return nil, fmt.Errorf("sglang memory: %w", err)
 	}
-	defer resp.Body.Close()
+	defer core.LogDeferredError(resp.Body.Close)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("sglang memory: unexpected status %d", resp.StatusCode)
 	}

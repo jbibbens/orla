@@ -89,20 +89,6 @@ func init() {
 		return NewOllamaProvider(modelName, cfg)
 	})
 
-	RegisterProviderFactory(string(core.LLMInferenceAPITypeSGLang), func(modelName string, backend *core.LLMBackend, cfg *config.OrlaConfig) (Provider, error) {
-		if backend == nil {
-			cfg.LLMBackend = &core.LLMBackend{Type: core.LLMInferenceAPITypeOllama}
-		} else if backend.Type == "" {
-			cfg.LLMBackend = &core.LLMBackend{
-				Type:     core.LLMInferenceAPITypeOllama,
-				Endpoint: backend.Endpoint,
-			}
-		} else if backend.Type != core.LLMInferenceAPITypeOllama {
-			return nil, fmt.Errorf("for an SGLang backend, the Inference API type must be %s, got %s", core.LLMInferenceAPITypeOllama, backend.Type)
-		}
-		return NewOllamaProvider(modelName, cfg)
-	})
-
 	RegisterProviderFactory(string(core.LLMInferenceAPITypeOpenAI), func(modelName string, _ *core.LLMBackend, cfg *config.OrlaConfig) (Provider, error) {
 		return NewOpenAIProvider(modelName, cfg.LLMBackend)
 	})
