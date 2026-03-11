@@ -118,10 +118,14 @@ services:
     build:
       context: ..
       dockerfile: examples/swe_bench_lite/Dockerfile
+      args:
+        FULL_SWE_BENCH: ${FULL_SWE_BENCH:-0}
     image: orla-swebench-lite:latest
     container_name: swebench-lite-run-vllm
     environment:
       - ORLA_URL=http://orla:8081
+      - FULL_SWE_BENCH=${FULL_SWE_BENCH:-0}
+      - MAX_INSTANCES=${MAX_INSTANCES:-}
       - WORKDIR_ROOT=/workdir
       - OUTPUT_PATH=/output/predictions.jsonl
       - METRICS_PATH=/output/metrics.json

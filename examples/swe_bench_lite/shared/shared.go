@@ -14,13 +14,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 const (
 	MaxOutputTokens = 4096
-
-	MaxIterations = 300
 
 	OrlaURL     = "http://orla:8081"
 	SGLangURL   = "http://sglang:30000/v1"
@@ -36,7 +35,22 @@ var (
 	VLLMHeavyURL          = os.Getenv("VLLM_HEAVY_URL")
 	VLLMLightURL          = os.Getenv("VLLM_LIGHT_URL")
 	BackendProviderIsVLLM = os.Getenv("BACKEND_PROVIDER") == "vllm"
+	MaxIterations         = maxIterationsFromEnv()
 )
+
+// maxIterationsFromEnv returns the instance limit from env: MAX_INSTANCES overrides;
+// FULL_SWE_BENCH=1 defaults to 2500, else 300.
+func maxIterationsFromEnv() int {
+	if s := os.Getenv("MAX_INSTANCES"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			return n
+		}
+	}
+	if os.Getenv("FULL_SWE_BENCH") == "1" {
+		return 2500
+	}
+	return 300
+}
 
 // SingleShotSystemPrompt instructs the model to produce a unified diff patch from the
 // problem statement and oracle-provided source files.
