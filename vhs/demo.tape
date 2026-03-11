@@ -20,7 +20,7 @@ Set FontSize 14
 Set FontFamily "JetBrains Mono"
 Set Height 800
 Set Width 1800
-Set Theme "Catppuccin Mocha"
+Set Theme "3024 Night"
 Set WindowBar Colorful
 Set TypingSpeed 30ms
 Set Padding 15
@@ -67,15 +67,3 @@ Type "./vhs/demo_run.sh"
 Enter
 Sleep 40s
 
-# =========================================================================
-# Segment 4: Teardown
-# =========================================================================
-
-# Exit tmux
-Ctrl+b
-Type "d"
-Sleep 1s
-
-Type "sudo docker compose -f deploy/docker-compose.workflow-demo.yaml down"
-Enter
-Sleep 8s
