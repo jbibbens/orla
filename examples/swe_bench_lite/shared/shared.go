@@ -212,6 +212,13 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
 		return "", nil, fmt.Errorf("mkdir worktree parent: %w", err)
 	}
+	// Remove any existing worktree registration (handles "missing but locked" from crashed runs).
+	removeForce := exec.CommandContext(ctx, "git", "worktree", "remove", "--force", worktreePath)
+	removeForce.Dir = mainClone
+	if err := removeForce.Run(); err != nil {
+		// Path may not be a worktree yet; ignore.
+		_ = err
+	}
 	// Remove stale worktree dir if it exists (e.g. from previous run).
 	if err := os.RemoveAll(worktreePath); err != nil && !os.IsNotExist(err) {
 		return "", nil, fmt.Errorf("remove stale worktree: %w", err)
