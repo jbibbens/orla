@@ -145,39 +145,24 @@ func PrepareWorkdir(ctx context.Context, inst SWEBenchLiteInstance) (absWorkdir 
 var repoCacheMu sync.Mutex
 var repoCacheCloned = make(map[string]bool)
 
-// repoWorktreeMu protects worktree add/remove per repo (git worktree is not safe for concurrent use).
-var repoWorktreeMu sync.Map // map[string]*sync.Mutex
-
-func repoWorktreeLock(repo string) func() {
-	mu, _ := repoWorktreeMu.LoadOrStore(repo, &sync.Mutex{})
-	mtx, ok := mu.(*sync.Mutex)
-	if !ok {
-		panic("repoWorktreeMu: unexpected type")
-	}
-	mtx.Lock()
-	return mtx.Unlock
-}
-
 // repoSlug returns a filesystem-safe slug for repo (e.g. "django/django" -> "django__django").
 func repoSlug(repo string) string {
 	return strings.ReplaceAll(repo, "/", "__")
 }
 
-// PrepareWorkdirPooled clones each repo once to a cache, uses git worktree for each instance,
-// and returns the worktree path plus a cleanup func to remove the worktree after reading files.
-// Much faster than PrepareWorkdir when many instances share the same repo.
-func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWorkdir string, cleanup func(), err error) {
+// EnsureRepoClone clones the repo once into a shared cache and fetches the base commit.
+// Returns the path to the cached clone. Safe for concurrent use: clone is serialized,
+// fetch is read-only and concurrent-safe on a single repo.
+func EnsureRepoClone(ctx context.Context, inst SWEBenchLiteInstance) (repoDir string, err error) {
 	reposDir := filepath.Join(WorkdirRoot, "repos")
 	mainClone := filepath.Join(reposDir, repoSlug(inst.Repo))
-	worktreePath := filepath.Join(WorkdirRoot, inst.InstanceID)
 
-	// Clone repo once (with mutex so we don't clone same repo concurrently).
 	repoCacheMu.Lock()
 	if !repoCacheCloned[inst.Repo] {
 		// #nosec G301 -- repos under WorkdirRoot
 		if err := os.MkdirAll(filepath.Dir(mainClone), 0o755); err != nil {
 			repoCacheMu.Unlock()
-			return "", nil, fmt.Errorf("mkdir repos: %w", err)
+			return "", fmt.Errorf("mkdir repos: %w", err)
 		}
 		if _, err := os.Stat(filepath.Join(mainClone, ".git")); err != nil {
 			if os.IsNotExist(err) {
@@ -187,7 +172,7 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 				clone.Stderr = os.Stderr
 				if err := clone.Run(); err != nil {
 					repoCacheMu.Unlock()
-					return "", nil, fmt.Errorf("git clone %s: %w", inst.Repo, err)
+					return "", fmt.Errorf("git clone %s: %w", inst.Repo, err)
 				}
 			}
 		}
@@ -195,78 +180,44 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 	}
 	repoCacheMu.Unlock()
 
-	// Serialize worktree operations per repo (git worktree is not safe for concurrent use).
-	// Lock is held until cleanup() runs to limit concurrent worktrees per repo (saves disk).
-	unlock := repoWorktreeLock(inst.Repo)
-	// unlock is NOT deferred here; cleanup will call it after worktree remove
-
-	// Fetch base commit.
 	fetch := exec.CommandContext(ctx, "git", "fetch", "--quiet", "origin", inst.BaseCommit)
 	fetch.Dir = mainClone
 	fetch.Stdout = os.Stdout
 	fetch.Stderr = os.Stderr
 	if err := fetch.Run(); err != nil {
-		unlock()
-		return "", nil, fmt.Errorf("git fetch %s: %w", inst.BaseCommit, err)
+		return "", fmt.Errorf("git fetch %s: %w", inst.BaseCommit, err)
 	}
 
-	// #nosec G301 -- workdir under WorkdirRoot
-	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
-		unlock()
-		return "", nil, fmt.Errorf("mkdir worktree parent: %w", err)
-	}
-	// Unlock and remove any existing worktree (handles "missing but locked" from crashed runs).
-	unlockCmd := exec.CommandContext(ctx, "git", "worktree", "unlock", worktreePath)
-	unlockCmd.Dir = mainClone
-	if err := unlockCmd.Run(); err != nil {
-		_ = err // may not be locked
-	}
-	removeForce := exec.CommandContext(ctx, "git", "worktree", "remove", "--force", worktreePath)
-	removeForce.Dir = mainClone
-	if err := removeForce.Run(); err != nil {
-		_ = err // path may not be a worktree yet
-	}
-	// Remove stale worktree dir if it exists (e.g. from previous run).
-	if err := os.RemoveAll(worktreePath); err != nil && !os.IsNotExist(err) {
-		unlock()
-		return "", nil, fmt.Errorf("remove stale worktree: %w", err)
-	}
-	// Prune removes git's stale worktree entries for dirs we just removed.
-	prune := exec.CommandContext(ctx, "git", "worktree", "prune")
-	prune.Dir = mainClone
-	if err := prune.Run(); err != nil {
-		log.Printf("warning: git worktree prune failed: %v", err)
-	}
+	return mainClone, nil
+}
 
-	// --force twice: required for "missing but locked" worktrees (crashed runs)
-	worktreeAdd := exec.CommandContext(ctx, "git", "worktree", "add", "--force", "--force", worktreePath, inst.BaseCommit)
-	worktreeAdd.Dir = mainClone
-	worktreeAdd.Stdout = os.Stdout
-	worktreeAdd.Stderr = os.Stderr
-	if err := worktreeAdd.Run(); err != nil {
-		unlock()
-		return "", nil, fmt.Errorf("git worktree add %s: %w", inst.InstanceID, err)
-	}
-
-	absWorkdir, err = filepath.Abs(worktreePath)
+// ReadFileAtCommit reads a single file from a git repo at the given commit using git show.
+func ReadFileAtCommit(ctx context.Context, repoDir, commit, filePath string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "show", commit+":"+filePath)
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
 	if err != nil {
-		if rmErr := exec.CommandContext(ctx, "git", "worktree", "remove", "--force", worktreePath).Run(); rmErr != nil {
-			log.Printf("warning: worktree remove failed: %v", rmErr)
-		}
-		unlock()
-		return "", nil, fmt.Errorf("workdir abs: %w", err)
+		return "", err
 	}
+	return string(out), nil
+}
 
-	// Cleanup removes worktree and releases the repo lock (held since PrepareWorkdirPooled).
-	cleanup = func() {
-		rm := exec.CommandContext(context.Background(), "git", "worktree", "remove", "--force", worktreePath)
-		rm.Dir = mainClone
-		if err := rm.Run(); err != nil {
-			log.Printf("warning: worktree remove failed: %v", err)
+// GatherOracleContextFromRepo reads oracle files directly from the git object store
+// using git show, avoiding any need for worktrees or filesystem checkouts.
+func GatherOracleContextFromRepo(ctx context.Context, repoDir, commit string, filePaths []string) string {
+	var b strings.Builder
+	for _, fp := range filePaths {
+		content, err := ReadFileAtCommit(ctx, repoDir, commit, fp)
+		if err != nil {
+			fmt.Fprintf(&b, "### %s\n[file not found at base commit]\n\n", fp)
+			continue
 		}
-		unlock()
+		if len(content) > MaxToolOutputBytes {
+			content = content[:MaxToolOutputBytes] + "\n[truncated]\n"
+		}
+		fmt.Fprintf(&b, "### %s\n```\n%s\n```\n\n", fp, content)
 	}
-	return absWorkdir, cleanup, nil
+	return b.String()
 }
 
 // EnsureRepo clones repo into workdir if needed, then fetches and checks out baseCommit.

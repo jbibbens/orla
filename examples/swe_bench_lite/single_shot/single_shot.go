@@ -137,13 +137,12 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset, mode string) 
 			case <-gctx.Done():
 				return gctx.Err()
 			}
-			absWorkdir, cleanup, err := shared.PrepareWorkdirPooled(gctx, inst)
+			repoDir, err := shared.EnsureRepoClone(gctx, inst)
 			if err != nil {
-				return fmt.Errorf("prepare workdir %s: %w", inst.InstanceID, err)
+				return fmt.Errorf("ensure repo %s: %w", inst.InstanceID, err)
 			}
 			filePaths := shared.OracleFilePaths(inst.Patch)
-			oracleCtx := shared.GatherOracleContext(absWorkdir, filePaths)
-			cleanup() // Remove worktree immediately; we have the file contents
+			oracleCtx := shared.GatherOracleContextFromRepo(gctx, repoDir, inst.BaseCommit, filePaths)
 			prompt := shared.BuildSingleShotPrompt(inst, oracleCtx)
 			log.Printf("  %s: %d oracle files, prompt %d chars", inst.InstanceID, len(filePaths), len(prompt))
 
