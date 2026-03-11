@@ -145,6 +145,19 @@ func PrepareWorkdir(ctx context.Context, inst SWEBenchLiteInstance) (absWorkdir 
 var repoCacheMu sync.Mutex
 var repoCacheCloned = make(map[string]bool)
 
+// repoWorktreeMu protects worktree add/remove per repo (git worktree is not safe for concurrent use).
+var repoWorktreeMu sync.Map // map[string]*sync.Mutex
+
+func repoWorktreeLock(repo string) func() {
+	mu, _ := repoWorktreeMu.LoadOrStore(repo, &sync.Mutex{})
+	mtx, ok := mu.(*sync.Mutex)
+	if !ok {
+		panic("repoWorktreeMu: unexpected type")
+	}
+	mtx.Lock()
+	return mtx.Unlock
+}
+
 // repoSlug returns a filesystem-safe slug for repo (e.g. "django/django" -> "django__django").
 func repoSlug(repo string) string {
 	return strings.ReplaceAll(repo, "/", "__")
@@ -182,6 +195,17 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 	}
 	repoCacheMu.Unlock()
 
+	// Serialize worktree operations per repo (git worktree is not safe for concurrent use).
+	unlock := repoWorktreeLock(inst.Repo)
+	defer unlock()
+
+	// Prune stale worktree entries from previous runs.
+	prune := exec.CommandContext(ctx, "git", "worktree", "prune")
+	prune.Dir = mainClone
+	if err := prune.Run(); err != nil {
+		log.Printf("warning: git worktree prune failed: %v", err)
+	}
+
 	// Fetch base commit and create worktree.
 	fetch := exec.CommandContext(ctx, "git", "fetch", "--quiet", "origin", inst.BaseCommit)
 	fetch.Dir = mainClone
@@ -216,7 +240,11 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 		return "", nil, fmt.Errorf("workdir abs: %w", err)
 	}
 
+	// Cleanup must re-acquire the repo lock before worktree remove.
+	repo := inst.Repo
 	cleanup = func() {
+		unlock := repoWorktreeLock(repo)
+		defer unlock()
 		rm := exec.CommandContext(context.Background(), "git", "worktree", "remove", "--force", worktreePath)
 		rm.Dir = mainClone
 		if err := rm.Run(); err != nil {
