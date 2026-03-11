@@ -196,8 +196,9 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 	repoCacheMu.Unlock()
 
 	// Serialize worktree operations per repo (git worktree is not safe for concurrent use).
+	// Lock is held until cleanup() runs to limit concurrent worktrees per repo (saves disk).
 	unlock := repoWorktreeLock(inst.Repo)
-	defer unlock()
+	// unlock is NOT deferred here; cleanup will call it after worktree remove
 
 	// Fetch base commit.
 	fetch := exec.CommandContext(ctx, "git", "fetch", "--quiet", "origin", inst.BaseCommit)
@@ -205,22 +206,29 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 	fetch.Stdout = os.Stdout
 	fetch.Stderr = os.Stderr
 	if err := fetch.Run(); err != nil {
+		unlock()
 		return "", nil, fmt.Errorf("git fetch %s: %w", inst.BaseCommit, err)
 	}
 
 	// #nosec G301 -- workdir under WorkdirRoot
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
+		unlock()
 		return "", nil, fmt.Errorf("mkdir worktree parent: %w", err)
 	}
-	// Remove any existing worktree registration (handles "missing but locked" from crashed runs).
+	// Unlock and remove any existing worktree (handles "missing but locked" from crashed runs).
+	unlockCmd := exec.CommandContext(ctx, "git", "worktree", "unlock", worktreePath)
+	unlockCmd.Dir = mainClone
+	if err := unlockCmd.Run(); err != nil {
+		_ = err // may not be locked
+	}
 	removeForce := exec.CommandContext(ctx, "git", "worktree", "remove", "--force", worktreePath)
 	removeForce.Dir = mainClone
 	if err := removeForce.Run(); err != nil {
-		// Path may not be a worktree yet; ignore.
-		_ = err
+		_ = err // path may not be a worktree yet
 	}
 	// Remove stale worktree dir if it exists (e.g. from previous run).
 	if err := os.RemoveAll(worktreePath); err != nil && !os.IsNotExist(err) {
+		unlock()
 		return "", nil, fmt.Errorf("remove stale worktree: %w", err)
 	}
 	// Prune removes git's stale worktree entries for dirs we just removed.
@@ -230,11 +238,13 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 		log.Printf("warning: git worktree prune failed: %v", err)
 	}
 
-	worktreeAdd := exec.CommandContext(ctx, "git", "worktree", "add", worktreePath, inst.BaseCommit)
+	// --force twice: required for "missing but locked" worktrees (crashed runs)
+	worktreeAdd := exec.CommandContext(ctx, "git", "worktree", "add", "--force", "--force", worktreePath, inst.BaseCommit)
 	worktreeAdd.Dir = mainClone
 	worktreeAdd.Stdout = os.Stdout
 	worktreeAdd.Stderr = os.Stderr
 	if err := worktreeAdd.Run(); err != nil {
+		unlock()
 		return "", nil, fmt.Errorf("git worktree add %s: %w", inst.InstanceID, err)
 	}
 
@@ -243,19 +253,18 @@ func PrepareWorkdirPooled(ctx context.Context, inst SWEBenchLiteInstance) (absWo
 		if rmErr := exec.CommandContext(ctx, "git", "worktree", "remove", "--force", worktreePath).Run(); rmErr != nil {
 			log.Printf("warning: worktree remove failed: %v", rmErr)
 		}
+		unlock()
 		return "", nil, fmt.Errorf("workdir abs: %w", err)
 	}
 
-	// Cleanup must re-acquire the repo lock before worktree remove.
-	repo := inst.Repo
+	// Cleanup removes worktree and releases the repo lock (held since PrepareWorkdirPooled).
 	cleanup = func() {
-		unlock := repoWorktreeLock(repo)
-		defer unlock()
 		rm := exec.CommandContext(context.Background(), "git", "worktree", "remove", "--force", worktreePath)
 		rm.Dir = mainClone
 		if err := rm.Run(); err != nil {
 			log.Printf("warning: worktree remove failed: %v", err)
 		}
+		unlock()
 	}
 	return absWorkdir, cleanup, nil
 }
