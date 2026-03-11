@@ -27,6 +27,11 @@ const (
 	ModeStageMapping = "stage_mapping"
 	ModeSJF          = "sjf"
 
+	// OrlaMaxConcurrency is higher than vLLM's default max_num_seqs (128) and SGLang's
+	// max_running_requests (dynamically computed from GPU memory, often 4096+), so Orla
+	// keeps dispatching and the backend queues; throughput is limited by the backend.
+	OrlaMaxConcurrency = 256
+
 	heavyModelID    = "Qwen/Qwen3-8B"
 	lightModelID    = "Qwen/Qwen3-4B-Instruct-2507"
 	defaultLightURL = "http://sglang-light:30000/v1"
@@ -65,6 +70,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset, mode string) 
 	} else {
 		heavyBackend = orla.NewSGLangBackend(heavyModelID, heavyURL)
 	}
+	heavyBackend.SetMaxConcurrency(OrlaMaxConcurrency)
 	if err := client.RegisterBackend(ctx, heavyBackend); err != nil {
 		return fmt.Errorf("register heavy backend: %w", err)
 	}
@@ -76,6 +82,7 @@ func Run(ctx context.Context, dataset *shared.SWEBenchLiteDataset, mode string) 
 		} else {
 			lightBackend = orla.NewSGLangBackend(lightModelID, lightURL)
 		}
+		lightBackend.SetMaxConcurrency(OrlaMaxConcurrency)
 		if err := client.RegisterBackend(ctx, lightBackend); err != nil {
 			return fmt.Errorf("register light backend: %w", err)
 		}
