@@ -65,7 +65,7 @@ Sleep 2s
 
 Type "./vhs/demo_run.sh"
 Enter
-Sleep 180s
+Sleep 40s
 
 # =========================================================================
 # Segment 4: Teardown
