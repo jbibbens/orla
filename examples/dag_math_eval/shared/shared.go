@@ -106,6 +106,9 @@ func LoadDataset() (*DAGMathDataset, error) {
 		}
 		dataset.Problems = append(dataset.Problems, problem)
 	}
+	sort.Slice(dataset.Problems, func(i, j int) bool {
+		return dataset.Problems[i].ProblemID < dataset.Problems[j].ProblemID
+	})
 	return dataset, nil
 }
 
