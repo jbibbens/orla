@@ -41,3 +41,6 @@ bin/
 # SWE-bench Lite dataset (committed as dataset.zip; unzipped in Docker)
 examples/swe_bench_lite/dataset/dev/
 examples/swe_bench_lite/dataset/test/
+
+# DAG-Math dataset (committed as dataset.zip; unzipped in Docker)
+examples/dag_math_eval/dataset/test/
