@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	MaxOutputTokens = 2048
+	MaxOutputTokens = 256
 
 	OrlaURL     = "http://orla:8081"
 	SGLangURL   = "http://sglang:30000/v1"
