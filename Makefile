@@ -28,10 +28,12 @@ coverage: ## Generate coverage report (coverage.html, excludes integration tests
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
+LINT_DIRS := ./cmd/... ./internal/... ./pkg/... ./examples/...
+
 .PHONY: lint
-lint: ## Run go vet and golangci-lint
-	go vet ./...
-	golangci-lint run ./...
+lint: ## Run go vet and golangci-lint (excludes vhs/ snippet files)
+	go vet $(LINT_DIRS)
+	golangci-lint run $(LINT_DIRS)
 
 .PHONY: format
 format: ## Format code and tidy go.mod
