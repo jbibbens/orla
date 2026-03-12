@@ -110,12 +110,11 @@ func LoadDataset() (*DAGMathDataset, error) {
 }
 
 // BuildStagePrompt constructs the user message for a single DAG-Math step.
+// Order is chosen for KV cache reuse: problem first (shared), then previous steps
+// (shared among siblings), then current step (unique per stage).
 func BuildStagePrompt(problem DAGMathProblem, step DAGMathStep, depResults map[int]string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Problem\n\n%s\n\n", problem.ProblemText)
-	fmt.Fprintf(&b, "## Current Step (step %d)\n\n", step.StepID)
-	fmt.Fprintf(&b, "**Inference:** %s\n\n", step.Edge)
-	fmt.Fprintf(&b, "**Conclusion:** %s\n\n", step.Node)
 
 	if len(step.DirectDependentSteps) > 0 && len(depResults) > 0 {
 		b.WriteString("## Previous Steps Referenced\n\n")
@@ -126,6 +125,9 @@ func BuildStagePrompt(problem DAGMathProblem, step DAGMathStep, depResults map[i
 		}
 	}
 
+	fmt.Fprintf(&b, "## Current Step (step %d)\n\n", step.StepID)
+	fmt.Fprintf(&b, "**Inference:** %s\n\n", step.Edge)
+	fmt.Fprintf(&b, "**Conclusion:** %s\n\n", step.Node)
 	b.WriteString("Verify and elaborate on this reasoning step.")
 	return b.String()
 }
