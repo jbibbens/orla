@@ -20,7 +20,7 @@ const (
 	ModeFlushPerRequest  = "flush_per_request"
 	ModeFlushPerWorkflow = "flush_per_workflow"
 
-	defaultModelID = "Qwen/Qwen3-0.6B" // smallest = fastest; override with SGLANG_MODEL
+	defaultModelID = "Qwen/Qwen3-8B" // override with SGLANG_MODEL
 )
 
 func Run(ctx context.Context, dataset *shared.DAGMathDataset, mode string) error {

@@ -19,7 +19,7 @@ services:
     entrypoint: ["python3", "-m", "sglang.launch_server"]
     command:
       - "--model-path"
-      - "${SGLANG_MODEL:-Qwen/Qwen3-0.6B}"
+      - "${SGLANG_MODEL:-Qwen/Qwen3-8B}"
       - "--tool-call-parser"
       - "qwen"
       - "--host"
@@ -78,7 +78,7 @@ services:
     environment:
       - ORLA_URL=http://orla:8081
       - SGLANG_URL=http://sglang:30000/v1
-      - SGLANG_MODEL=${SGLANG_MODEL:-Qwen/Qwen3-0.6B}
+      - SGLANG_MODEL=${SGLANG_MODEL:-Qwen/Qwen3-8B}
       - MAX_INSTANCES=${MAX_INSTANCES:-}
       - METRICS_PATH=/output/metrics.json
       - OUTPUT_PATH=/output/results.json
