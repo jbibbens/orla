@@ -4,7 +4,7 @@
 #   mkdir -p deploy/output
 #   RUN_TARGET=dag_math_flush_per_workflow docker compose -f deploy/docker-compose.dag-math.yaml up
 # Flush per request: RUN_TARGET=dag_math_flush_per_request docker compose ...
-# Metrics: deploy/output/metrics.json. Requires GPU for SGLang.
+# Output: deploy/output/metrics.json, deploy/output/results.json. Requires GPU for SGLang.
 
 services:
   sglang:
@@ -80,7 +80,7 @@ services:
       - SGLANG_URL=http://sglang:30000/v1
       - MAX_INSTANCES=${MAX_INSTANCES:-}
       - METRICS_PATH=/output/metrics.json
-      - OUTPUT_PATH=/output/metrics.json
+      - OUTPUT_PATH=/output/results.json
       - EXPERIMENT_MODE=${EXPERIMENT_MODE:-flush_per_workflow}
       - RUN_TARGET=${RUN_TARGET:-dag_math_flush_per_workflow}
     volumes:

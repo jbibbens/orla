@@ -49,10 +49,18 @@ func Run(ctx context.Context, dataset *shared.DAGMathDataset, mode string) error
 	metrics := shared.NewRunMetricsRecorder("dag_math_" + mode)
 	metrics.TotalWorkflows = len(problems)
 	metrics.BeginRun()
+	results := shared.NewRunResultsRecorder("dag_math_" + mode)
 	defer func() {
 		metrics.EndRun()
 		if err := metrics.Write(""); err != nil {
 			log.Printf("warning: write metrics: %v", err)
+		} else {
+			log.Printf("Metrics written to %s", shared.MetricsPath)
+		}
+		if err := results.Write(""); err != nil {
+			log.Printf("warning: write results: %v", err)
+		} else {
+			log.Printf("Results written to %s", shared.OutputPath)
 		}
 	}()
 
@@ -62,21 +70,28 @@ func Run(ctx context.Context, dataset *shared.DAGMathDataset, mode string) error
 		log.Printf("[%d/%d] Starting problem %d (%d steps, difficulty=%.0f)",
 			i+1, len(problems), problem.ProblemID, len(problem.Steps), problem.Difficulty)
 
-		wfMetrics, err := runWorkflow(ctx, client, backend, problem, mode)
+		wfMetrics, wfResults, err := runWorkflow(ctx, client, backend, problem, mode)
 		if err != nil {
 			log.Printf("  problem %d failed: %v", problem.ProblemID, err)
 			continue
 		}
 		metrics.AddWorkflow(*wfMetrics)
+		if wfResults != nil {
+			results.AddWorkflow(*wfResults)
+		}
+		// Progress log every 10 workflows or on last
+		if (i+1)%10 == 0 || i+1 == len(problems) {
+			log.Printf("Progress: %d/%d workflows complete", i+1, len(problems))
+		}
 	}
 
-	log.Printf("Done. Metrics written to %s", shared.MetricsPath)
+	log.Printf("Done. Metrics written to %s, results to %s", shared.MetricsPath, shared.OutputPath)
 	return nil
 }
 
-func runWorkflow(ctx context.Context, client *orla.OrlaClient, backend *orla.LLMBackend, problem shared.DAGMathProblem, mode string) (*shared.WorkflowMetrics, error) {
+func runWorkflow(ctx context.Context, client *orla.OrlaClient, backend *orla.LLMBackend, problem shared.DAGMathProblem, mode string) (*shared.WorkflowMetrics, *shared.WorkflowResult, error) {
 	if len(problem.Steps) == 0 {
-		return nil, fmt.Errorf("problem %d has no steps", problem.ProblemID)
+		return nil, nil, fmt.Errorf("problem %d has no steps", problem.ProblemID)
 	}
 
 	wf := orla.NewWorkflow(client)
@@ -114,7 +129,7 @@ func runWorkflow(ctx context.Context, client *orla.OrlaClient, backend *orla.LLM
 		})
 
 		if err := wf.AddStage(stage); err != nil {
-			return nil, fmt.Errorf("add stage step_%d: %w", step.StepID, err)
+			return nil, nil, fmt.Errorf("add stage step_%d: %w", step.StepID, err)
 		}
 
 		stageIDByStepID[step.StepID] = stage.ID
@@ -133,7 +148,7 @@ func runWorkflow(ctx context.Context, client *orla.OrlaClient, backend *orla.LLM
 				continue
 			}
 			if err := wf.AddDependency(stageID, depStageID); err != nil {
-				return nil, fmt.Errorf("add dependency step_%d -> step_%d: %w", step.StepID, depStepID, err)
+				return nil, nil, fmt.Errorf("add dependency step_%d -> step_%d: %w", step.StepID, depStepID, err)
 			}
 		}
 	}
@@ -142,7 +157,7 @@ func runWorkflow(ctx context.Context, client *orla.OrlaClient, backend *orla.LLM
 	results, err := wf.Execute(ctx)
 	wfDuration := time.Since(wfStart)
 	if err != nil {
-		return nil, fmt.Errorf("execute workflow: %w", err)
+		return nil, nil, fmt.Errorf("execute workflow: %w", err)
 	}
 
 	wfMetrics := &shared.WorkflowMetrics{
@@ -181,5 +196,29 @@ func runWorkflow(ctx context.Context, client *orla.OrlaClient, backend *orla.LLM
 		wfMetrics.Stages = append(wfMetrics.Stages, sm)
 	}
 
-	return wfMetrics, nil
+	// Build workflow results (prompt + response per step) for output.
+	wfResults := &shared.WorkflowResult{ProblemID: problem.ProblemID}
+	for _, step := range problem.Steps {
+		stageID := stageIDByStepID[step.StepID]
+		result := results[stageID]
+		depContents := make(map[int]string)
+		for _, depStepID := range step.DirectDependentSteps {
+			depStageID := stageIDByStepID[depStepID]
+			if r, ok := results[depStageID]; ok && r != nil && r.Response != nil {
+				depContents[depStepID] = r.Response.Content
+			}
+		}
+		prompt := shared.BuildStagePrompt(problem, step, depContents)
+		response := ""
+		if result != nil && result.Response != nil {
+			response = result.Response.Content
+		}
+		wfResults.Steps = append(wfResults.Steps, shared.StepResult{
+			StepID:   step.StepID,
+			Prompt:   prompt,
+			Response: response,
+		})
+	}
+
+	return wfMetrics, wfResults, nil
 }

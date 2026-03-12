@@ -27,7 +27,7 @@ RUN chmod +x /entrypoint.sh
 
 ENV PATH="/usr/local/bin:$PATH"
 ENV ORLA_URL=http://orla:8081
-ENV OUTPUT_PATH=/output/metrics.json
+ENV OUTPUT_PATH=/output/results.json
 ENV METRICS_PATH=/output/metrics.json
 WORKDIR /
 
