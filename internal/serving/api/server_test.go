@@ -13,6 +13,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestServer_HandleExecute_RequestBodyTooLarge(t *testing.T) {
+	layer := serving.NewAgenticLayer()
+	server := NewAgenticServer(layer, ":0")
+
+	// Valid JSON body that exceeds maxRequestBodyBytes (10MB)
+	payload := `{"backend":"x","prompt":"` + string(bytes.Repeat([]byte("x"), maxRequestBodyBytes)) + `"}`
+	req := httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader([]byte(payload)))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "request body too large")
+}
+
+func TestRecoveryMiddleware_RecoversPanic(t *testing.T) {
+	panicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	})
+	wrapped := recoveryMiddleware(panicHandler)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	wrapped.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusInternalServerError, resp.Code)
+	assert.Contains(t, resp.Body.String(), "internal server error")
+}
+
 func TestServer_HandleHealth(t *testing.T) {
 	layer := serving.NewAgenticLayer()
 	server := NewAgenticServer(layer, ":0")

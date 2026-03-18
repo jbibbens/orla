@@ -78,6 +78,11 @@ func newServeCmd() *cobra.Command {
 				}
 			case err := <-errChan:
 				if err != nil {
+					zap.L().Error("Server error, shutting down", zap.Error(err))
+					if shutdownErr := apiServer.Shutdown(ctx); shutdownErr != nil {
+						zap.L().Error("Shutdown failed", zap.Error(shutdownErr))
+						return fmt.Errorf("server error: %w", err)
+					}
 					return fmt.Errorf("server error: %w", err)
 				}
 			}

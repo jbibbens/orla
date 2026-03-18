@@ -20,6 +20,23 @@ const (
 	sseEventContent  = "content"
 	sseEventThinking = "thinking"
 	sseEventDone     = "done"
+
+	// maxRequestBodyBytes limits JSON request body size to prevent memory exhaustion (10MB)
+	maxRequestBodyBytes = 10 << 20
+	// readTimeout is the time we wait for the http client to send the request body
+	readTimeout = 30 * time.Second
+	// readHeaderTimeout is the time we wait for the http client to send the request header
+	readHeaderTimeout = 10 * time.Second
+
+	// writeTimeout is the time we wait for from the request being processed to the response being sent back to the client.
+	// This can be long for inference and streaming.
+	writeTimeout = 30 * time.Minute
+	// idleTimeout is the time we wait for the http client to send the next request.
+	// If the client doesn't send a request within this time, the connection is closed.
+	idleTimeout = 120 * time.Second
+	// maxHeaderBytes is the maximum size of the HTTP header. This is 1MB by default.
+	// This is used to prevent HTTP request smuggling attacks.
+	maxHeaderBytes = 1 << 20
 )
 
 // AgenticServer is the HTTP API server for the daemon
@@ -37,13 +54,30 @@ func NewAgenticServer(layer *serving.AgenticLayer, listenAddress string) *Agenti
 		mux:   mux,
 		httpServer: &http.Server{
 			Addr:              listenAddress,
-			Handler:           mux,
-			ReadHeaderTimeout: 10 * time.Second,
+			Handler:           recoveryMiddleware(mux),
+			ReadTimeout:       readTimeout,
+			ReadHeaderTimeout: readHeaderTimeout,
+			WriteTimeout:      writeTimeout, // long-running inference and streaming
+			IdleTimeout:       idleTimeout,
+			MaxHeaderBytes:    maxHeaderBytes, // 1MB
 		},
 	}
 
 	server.registerRoutes()
 	return server
+}
+
+// recoveryMiddleware catches panics in handlers, logs the stack, and returns 500.
+func recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				zap.L().Error("handler panic", zap.Any("panic", err), zap.Stack("stack"))
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *AgenticServer) registerRoutes() {
@@ -96,8 +130,9 @@ type ExecuteResponse struct {
 }
 
 func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
+	body := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req ExecuteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -212,7 +247,7 @@ type RegisterBackendRequest struct {
 	Type           string `json:"type"`                      // "openai" or "sglang"
 	ModelID        string `json:"model_id"`                  // full model identifier e.g. "openai:Qwen/Qwen3-4B-Instruct-2507", "openai:llama3"
 	APIKeyEnvVar   string `json:"api_key_env_var,omitempty"` // optional env var name for API key (for openai-type backends)
-	MaxConcurrency int    `json:"max_concurrency,omitempty"`  // max concurrent requests to this backend (default 1)
+	MaxConcurrency int    `json:"max_concurrency,omitempty"` // max concurrent requests to this backend (default 1)
 	QueueCapacity  int    `json:"queue_capacity,omitempty"`  // max queued requests; 0 = default (4096)
 }
 
@@ -223,8 +258,9 @@ type RegisterBackendResponse struct {
 }
 
 func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Request) {
+	body := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req RegisterBackendRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -306,8 +342,9 @@ type WorkflowCompleteResponse struct {
 }
 
 func (s *AgenticServer) handleWorkflowComplete(w http.ResponseWriter, r *http.Request) {
+	body := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req WorkflowCompleteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
 		return
 	}
