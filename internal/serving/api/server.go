@@ -212,7 +212,8 @@ type RegisterBackendRequest struct {
 	Type           string `json:"type"`                      // "openai" or "sglang"
 	ModelID        string `json:"model_id"`                  // full model identifier e.g. "openai:Qwen/Qwen3-4B-Instruct-2507", "openai:llama3"
 	APIKeyEnvVar   string `json:"api_key_env_var,omitempty"` // optional env var name for API key (for openai-type backends)
-	MaxConcurrency int    `json:"max_concurrency,omitempty"` // max concurrent requests to this backend (default 1)
+	MaxConcurrency int    `json:"max_concurrency,omitempty"`  // max concurrent requests to this backend (default 1)
+	QueueCapacity  int    `json:"queue_capacity,omitempty"`  // max queued requests; 0 = default (4096)
 }
 
 // RegisterBackendResponse is the response body for register backend.
@@ -264,6 +265,7 @@ func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Req
 		Type:           backendType,
 		APIKeyEnvVar:   req.APIKeyEnvVar,
 		MaxConcurrency: req.MaxConcurrency,
+		QueueCapacity:  req.QueueCapacity,
 	}
 	s.layer.AddLLMBackend(req.Name, backend, req.ModelID)
 
@@ -271,7 +273,8 @@ func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Req
 		zap.String("name", req.Name),
 		zap.String("endpoint", req.Endpoint),
 		zap.String("model_id", req.ModelID),
-		zap.Int("max_concurrency", req.MaxConcurrency))
+		zap.Int("max_concurrency", req.MaxConcurrency),
+		zap.Int("queue_capacity", req.QueueCapacity))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

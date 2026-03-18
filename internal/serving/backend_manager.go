@@ -18,6 +18,7 @@ type backendEntry struct {
 	backend        *core.LLMBackend
 	modelID        string
 	maxConcurrency int
+	queueCapacity  int
 }
 
 // LLMBackendManager manages a pool of LLM backend configurations and their providers
@@ -47,6 +48,7 @@ func (m *LLMBackendManager) AddLLMBackend(name string, backend *core.LLMBackend,
 		backend:        backend,
 		modelID:        modelID,
 		maxConcurrency: backend.MaxConcurrency,
+		queueCapacity:  backend.QueueCapacity,
 	}
 	delete(m.providers, name)
 	if exec, ok := m.executors[name]; ok {
@@ -116,7 +118,7 @@ func (m *LLMBackendManager) getOrCreateExecutorLocked(backendName string) (*back
 	if exec, ok := m.executors[backendName]; ok {
 		return exec, nil
 	}
-	exec := newBackendExecutor(backendName, m, entry.maxConcurrency, m.memoryManager)
+	exec := newBackendExecutor(backendName, m, entry.maxConcurrency, entry.queueCapacity, m.memoryManager)
 	m.executors[backendName] = exec
 	return exec, nil
 }

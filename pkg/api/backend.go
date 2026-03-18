@@ -25,6 +25,7 @@ type RegisterBackendRequest struct {
 	ModelID        string `json:"model_id"`                    // e.g. "openai:Qwen/Qwen3-4B-Instruct-2507"
 	APIKeyEnvVar   string `json:"api_key_env_var,omitempty"`   // optional env var for API key (openai-type)
 	MaxConcurrency int    `json:"max_concurrency,omitempty"`   // max concurrent requests dispatched to this backend (default 1)
+	QueueCapacity  int    `json:"queue_capacity,omitempty"`   // max queued requests for this backend; 0 = default (4096)
 }
 
 // RegisterBackendResponse is the response from register backend.
@@ -41,6 +42,13 @@ type LLMBackend = RegisterBackendRequest
 // A value of 0 or 1 means serial dispatch (default).
 func (r *RegisterBackendRequest) SetMaxConcurrency(n int) {
 	r.MaxConcurrency = n
+}
+
+// SetQueueCapacity sets the maximum number of requests that may be queued for
+// this backend. When full, new requests get an error (backpressure). Zero
+// means use the server default (4096).
+func (r *RegisterBackendRequest) SetQueueCapacity(n int) {
+	r.QueueCapacity = n
 }
 
 func NewVLLMBackend(modelID string, endpoint string) *LLMBackend {

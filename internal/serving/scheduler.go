@@ -56,17 +56,21 @@ type backendExecutor struct {
 	closed      bool
 }
 
-func newBackendExecutor(backendName string, manager *LLMBackendManager, maxConcurrency int, mm *memory.DefaultManager) *backendExecutor {
+func newBackendExecutor(backendName string, manager *LLMBackendManager, maxConcurrency, queueCapacity int, mm *memory.DefaultManager) *backendExecutor {
 	if maxConcurrency < 1 {
 		zap.L().Warn("max concurrency is less than 1, setting to 1", zap.String("backend", backendName), zap.Int("max_concurrency", maxConcurrency))
 		maxConcurrency = 1
+	}
+	capacity := queueCapacity
+	if capacity <= 0 {
+		capacity = defaultBackendQueueCapacity
 	}
 	exec := &backendExecutor{
 		backendName:    backendName,
 		manager:        manager,
 		memoryManager:  mm,
 		maxConcurrency: maxConcurrency,
-		capacity:       defaultBackendQueueCapacity,
+		capacity:       capacity,
 		stageQueues:    make(map[string][]*scheduledRequest),
 	}
 	exec.cond = sync.NewCond(&exec.mu)

@@ -28,4 +28,7 @@ type LLMBackend struct {
 	// to this backend. Backends like vLLM and SGLang support continuous batching and can
 	// process multiple requests simultaneously. A value of 0 or 1 means serial dispatch.
 	MaxConcurrency int `yaml:"max_concurrency,omitempty" mapstructure:"max_concurrency"`
+	// QueueCapacity is the maximum number of requests that may be queued for this backend.
+	// When the queue is full, ScheduleChat returns an error. A value of 0 means use the default (4096).
+	QueueCapacity int `yaml:"queue_capacity,omitempty" mapstructure:"queue_capacity"`
 }

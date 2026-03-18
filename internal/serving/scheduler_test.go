@@ -245,14 +245,14 @@ func TestBackendExecutor_ConcurrencyRespected(t *testing.T) {
 
 func TestNewBackendExecutor_ClampsZeroToOne(t *testing.T) {
 	manager := NewLLMBackendManager(nil)
-	exec := newBackendExecutor("test", manager, 0, nil)
+	exec := newBackendExecutor("test", manager, 0, 0, nil)
 	defer exec.close()
 	assert.Equal(t, 1, exec.maxConcurrency)
 }
 
 func TestNewBackendExecutor_ClampsNegativeToOne(t *testing.T) {
 	manager := NewLLMBackendManager(nil)
-	exec := newBackendExecutor("test", manager, -5, nil)
+	exec := newBackendExecutor("test", manager, -5, 0, nil)
 	defer exec.close()
 	assert.Equal(t, 1, exec.maxConcurrency)
 }
