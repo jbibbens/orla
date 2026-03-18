@@ -58,23 +58,19 @@ jobs:
       - name: Run lint
         run: make lint
 
-      - name: Install Ollama
-        run: |
-          curl -fsSL https://ollama.ai/install.sh | sh
-          # Start Ollama in background
-          ollama serve &
-          # Wait for Ollama to be ready
-          timeout 30 bash -c 'until curl -s http://localhost:11434/api/tags > /dev/null; do sleep 1; done' || true
-          # pull the test model
-          ollama pull qwen3:0.6b
-          # wait for the model to be ready
-          timeout 30 bash -c 'until ollama list | grep -q qwen3:0.6b; do sleep 1; done' || true
-
       - name: Run tests
         run: make test
 
+      - name: Run tests with race detector
+        run: make test-race
+
       - name: Run integration tests
         run: make test-integration
+
+      - name: Generate and report coverage
+        run: |
+          go test -coverprofile=coverage.out -covermode=atomic ./internal/... ./pkg/...
+          go tool cover -func coverage.out
 
       - name: Get version
         id: version

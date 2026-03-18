@@ -174,13 +174,16 @@ func (e *backendExecutor) worker() {
 			continue
 		}
 
-		if response.Metrics == nil {
-			response.Metrics = &model.ResponseMetrics{}
-		}
-		response.Metrics.QueueWaitMs = queueWaitMs
-		response.Metrics.SchedulerDecisionMs = schedulerDecisionMs
-		response.Metrics.DispatchMs = dispatchMs
+		// For non-streaming, set metrics immediately. For streaming, the provider's goroutine
+		// populates response (including Metrics) concurrently. We must not race with it.
+		// We add queue/scheduler metrics after the stream completes (see below).
 		if !req.opts.Stream {
+			if response.Metrics == nil {
+				response.Metrics = &model.ResponseMetrics{}
+			}
+			response.Metrics.QueueWaitMs = queueWaitMs
+			response.Metrics.SchedulerDecisionMs = schedulerDecisionMs
+			response.Metrics.DispatchMs = dispatchMs
 			response.Metrics.BackendLatencyMs = dispatchMs
 		}
 
@@ -218,6 +221,13 @@ func (e *backendExecutor) worker() {
 
 		if streamDone != nil {
 			<-streamDone
+			// Provider's goroutine has finished; safe to add queue/scheduler metrics.
+			if response.Metrics == nil {
+				response.Metrics = &model.ResponseMetrics{}
+			}
+			response.Metrics.QueueWaitMs = queueWaitMs
+			response.Metrics.SchedulerDecisionMs = schedulerDecisionMs
+			response.Metrics.DispatchMs = dispatchMs
 			if e.memoryManager != nil && req.workflowID != "" {
 				e.memoryManager.ClearInflight(req.backend, requestID)
 				e.memoryManager.OnTransition(req.ctx, memory.StageTransition{

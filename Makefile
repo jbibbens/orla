@@ -15,8 +15,16 @@ test: ## Run tests (excluding integration tests and vhs/ snippet files)
 		go test $(TEST_DIRS); \
 	fi
 
+.PHONY: test-race
+test-race: ## Run tests with race detector
+	@if [ "$${VERBOSE:-0}" = "1" ]; then \
+		go test -race -v $(TEST_DIRS); \
+	else \
+		go test -race $(TEST_DIRS); \
+	fi
+
 .PHONY: test-integration
-test-integration: ## Run only integration tests (requires Ollama)
+test-integration: ## Run only integration tests
 	@if [ "$${VERBOSE:-0}" = "1" ]; then \
 		go test -tags=integration -run Integration -v -count=1 $(TEST_DIRS); \
 	else \

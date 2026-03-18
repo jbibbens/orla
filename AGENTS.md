@@ -47,7 +47,8 @@ Other useful targets:
 | `make format`      | `go fmt` + `go mod tidy`                         |
 | `make build`       | Build binary to `bin/orla`                       |
 | `make coverage`    | Generate `coverage.html` from internal and pkg   |
-| `make test-integration` | Integration tests (requires Ollama running) |
+| `make test-race`        | Run tests with race detector                |
+| `make test-integration` | Integration tests                           |
 
 ## Code Style and Conventions
 
@@ -177,7 +178,7 @@ Always verify interface compliance: `var _ Provider = (*MockProvider)(nil)`.
 
 ### Integration Tests
 
-Integration tests require the `integration` build tag and a running Ollama instance. They are excluded from `make test` and run separately via `make test-integration`.
+Integration tests use `MockLLMServer` for end-to-end flows without external services. They are named `TestIntegration_*` and run via `make test-integration` (or `make test` which includes them).
 
 ## Linting
 
