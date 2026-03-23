@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dorcha-inc/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/core"
 )
 
 const (

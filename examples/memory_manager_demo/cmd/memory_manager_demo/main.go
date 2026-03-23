@@ -14,7 +14,7 @@ import (
 	"log"
 	"os"
 
-	memorymanagerdemo "github.com/dorcha-inc/orla/examples/memory_manager_demo"
+	memorymanagerdemo "github.com/harvard-cns/orla/examples/memory_manager_demo"
 )
 
 func main() {

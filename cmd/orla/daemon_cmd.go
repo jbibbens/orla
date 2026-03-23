@@ -7,10 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/dorcha-inc/orla/internal/config"
-	"github.com/dorcha-inc/orla/internal/core"
-	"github.com/dorcha-inc/orla/internal/serving"
-	servingapi "github.com/dorcha-inc/orla/internal/serving/api"
+	"github.com/harvard-cns/orla/internal/config"
+	"github.com/harvard-cns/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/serving"
+	servingapi "github.com/harvard-cns/orla/internal/serving/api"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )

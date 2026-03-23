@@ -76,7 +76,7 @@ jobs:
         run: |
           echo "TEST MODE: Created pre-release for testing"
           echo "Pre-release tag: ${{ steps.create-test-tag.outputs.tag }}"
-          echo "Homebrew tap updated: dorcha-inc/homebrew-orla-test (test tap, not production)"
+          echo "Homebrew tap updated: harvard-cns/homebrew-orla-test (test tap, not production)"
           echo "Cleanup will happen automatically after all tests complete"
 
   test-install-linux:
@@ -93,7 +93,7 @@ jobs:
           # Test the install script using the actual release
           # Use sudo since the script installs to /usr/local/bin
           # Pass GITHUB_TOKEN to help with API rate limits
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
 
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
@@ -122,7 +122,7 @@ jobs:
         run: |
           # Test the uninstall script
           # Use sudo since the script removes from /usr/local/bin
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sudo sh
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref }}/scripts/uninstall.sh | sudo sh
 
           # Verify orla is no longer in PATH
           if command -v orla >/dev/null 2>&1; then
@@ -157,7 +157,7 @@ jobs:
           # Test the install script using the actual release
           # On macOS, run without sudo (Homebrew won't run as root, and /usr/local/bin is typically writable)
           # Pass GITHUB_TOKEN to help with API rate limits
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref }}/scripts/install.sh | env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
 
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
@@ -182,7 +182,7 @@ jobs:
         run: |
           # Test the uninstall script
           # Use sudo since the script removes from /usr/local/bin
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref }}/scripts/uninstall.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
 
           # Verify orla is no longer in PATH
           if command -v orla >/dev/null 2>&1; then
@@ -219,10 +219,10 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Use test tap for manual testing
-            brew tap dorcha-inc/orla-test
+            brew tap harvard-cns/orla-test
           else
             # Use production tap for real releases
-            brew tap dorcha-inc/orla
+            brew tap harvard-cns/orla
           fi
 
       - name: test-homebrew-installation
@@ -231,10 +231,10 @@ jobs:
           # The post-install hook will run and needs brew in PATH
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Install from test tap
-            brew install --cask dorcha-inc/orla-test/orla
+            brew install --cask harvard-cns/orla-test/orla
           else
             # Install from production tap
-            brew install --cask dorcha-inc/orla/orla
+            brew install --cask harvard-cns/orla/orla
           fi
 
           # Verify orla is installed and in PATH
@@ -292,18 +292,18 @@ jobs:
       - name: Tap the repository
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            brew tap dorcha-inc/orla-test
+            brew tap harvard-cns/orla-test
           else
-            brew tap dorcha-inc/orla
+            brew tap harvard-cns/orla
           fi
 
       - name: test-homebrew-installation
         run: |
           # Install via Homebrew
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            brew install --cask dorcha-inc/orla-test/orla
+            brew install --cask harvard-cns/orla-test/orla
           else
-            brew install --cask dorcha-inc/orla/orla
+            brew install --cask harvard-cns/orla/orla
           fi
 
           # Verify orla is installed and in PATH
@@ -385,7 +385,7 @@ jobs:
           # Test the install script with --skip-ollama flag
           # Use sudo since the script installs to /usr/local/bin
           # Pass GITHUB_TOKEN to help with API rate limits
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh -s -- --skip-ollama
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh -s -- --skip-ollama
 
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
@@ -410,11 +410,11 @@ jobs:
 
       - name: Test with OLLAMA_HOST environment variable
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
 
       - name: Test with llm_backend configuration
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
 
   test-homebrew-skip-ollama-linux:
     name: test-homebrew-skip-ollama-linux
@@ -435,9 +435,9 @@ jobs:
       - name: Tap the repository
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            brew tap dorcha-inc/orla-test
+            brew tap harvard-cns/orla-test
           else
-            brew tap dorcha-inc/orla
+            brew tap harvard-cns/orla
           fi
 
       - name: test-homebrew-installation-skip-ollama
@@ -445,9 +445,9 @@ jobs:
           # Install via Homebrew with HOMEBREW_ORLA_SKIP_OLLAMA=1
           # Homebrew only passes through env vars prefixed with HOMEBREW_
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla-test/orla
+            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask harvard-cns/orla-test/orla
           else
-            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask harvard-cns/orla/orla
           fi
 
           # Verify orla is installed and in PATH
@@ -469,11 +469,11 @@ jobs:
 
       - name: Test with OLLAMA_HOST environment variable
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
 
       - name: Test with llm_backend configuration
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
 
   test-install-skip-ollama-macos:
     name: test-install-skip-ollama-macos
@@ -497,7 +497,7 @@ jobs:
           # Test the install script with --skip-ollama flag
           # On macOS, run without sudo (Homebrew won't run as root, and /usr/local/bin is typically writable)
           # Pass GITHUB_TOKEN to help with API rate limits
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh -s -- --skip-ollama
+          curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/${{ github.ref }}/scripts/install.sh | env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh -s -- --skip-ollama
 
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
@@ -548,9 +548,9 @@ jobs:
       - name: Tap the repository
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            brew tap dorcha-inc/orla-test
+            brew tap harvard-cns/orla-test
           else
-            brew tap dorcha-inc/orla
+            brew tap harvard-cns/orla
           fi
 
       - name: test-homebrew-installation-skip-ollama
@@ -558,9 +558,9 @@ jobs:
           # Install via Homebrew with HOMEBREW_ORLA_SKIP_OLLAMA=1
           # Homebrew only passes through env vars prefixed with HOMEBREW_
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla-test/orla
+            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask harvard-cns/orla-test/orla
           else
-            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask harvard-cns/orla/orla
           fi
 
           # Verify orla is installed and in PATH
@@ -626,7 +626,7 @@ jobs:
 
           # Get the release ID for the pre-release
           RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/dorcha-inc/orla/releases/tags/${TEST_TAG}" | \
+            "https://api.github.com/repos/harvard-cns/orla/releases/tags/${TEST_TAG}" | \
             jq -r '.id // empty')
 
           if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
@@ -635,7 +635,7 @@ jobs:
             # Delete the release
             curl -X DELETE \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/dorcha-inc/orla/releases/${RELEASE_ID}"
+              "https://api.github.com/repos/harvard-cns/orla/releases/${RELEASE_ID}"
             echo "Deleted pre-release (ID: $RELEASE_ID)"
           fi
 

@@ -7,9 +7,9 @@ import (
 	"log"
 	"os"
 
-	singleshot "github.com/dorcha-inc/orla/examples/swe_bench_lite/single_shot"
+	singleshot "github.com/harvard-cns/orla/examples/swe_bench_lite/single_shot"
 
-	"github.com/dorcha-inc/orla/examples/swe_bench_lite/shared"
+	"github.com/harvard-cns/orla/examples/swe_bench_lite/shared"
 )
 
 func main() {

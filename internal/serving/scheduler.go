@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dorcha-inc/orla/internal/model"
-	"github.com/dorcha-inc/orla/internal/serving/memory"
-	"github.com/dorcha-inc/orla/internal/serving/metrics"
+	"github.com/harvard-cns/orla/internal/model"
+	"github.com/harvard-cns/orla/internal/serving/memory"
+	"github.com/harvard-cns/orla/internal/serving/metrics"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )

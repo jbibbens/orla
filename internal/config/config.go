@@ -5,7 +5,7 @@ package config
 import (
 	"fmt"
 
-	"github.com/dorcha-inc/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/core"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )

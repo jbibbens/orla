@@ -15,7 +15,7 @@ import (
 	"log"
 	"os"
 
-	orla "github.com/dorcha-inc/orla/pkg/api"
+	orla "github.com/harvard-cns/orla/pkg/api"
 )
 
 const (

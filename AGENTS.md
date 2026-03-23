@@ -54,7 +54,7 @@ Other useful targets:
 
 ### Go Version and Module
 
-The module is `github.com/dorcha-inc/orla` using Go 1.25+. All code lives under `internal/` (private) or `pkg/` (public API).
+The module is `github.com/harvard-cns/orla` using Go 1.25+. All code lives under `internal/` (private) or `pkg/` (public API).
 
 ### Naming
 

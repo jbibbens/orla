@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 
-	orlaTesting "github.com/dorcha-inc/orla/internal/testing"
+	orlaTesting "github.com/harvard-cns/orla/internal/testing"
 )
 
 func TestNew(t *testing.T) {

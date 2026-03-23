@@ -17,7 +17,7 @@ and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0
 - support for orla rfc 1. namely, the orla mcp server runtime, tool discovery, zero-config tool execution, hot reload, etc.
 - support for orla rfc 3's tool install command and tool registry.
 
-[Unreleased]: https://github.com/dorcha-inc/orla/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/dorcha-inc/orla/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/dorcha-inc/orla/releases/tag/v0.1.0
+[Unreleased]: https://github.com/harvard-cns/orla/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/harvard-cns/orla/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/harvard-cns/orla/releases/tag/v0.1.0
 

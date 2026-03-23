@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dorcha-inc/orla/internal/config"
-	"github.com/dorcha-inc/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/config"
+	"github.com/harvard-cns/orla/internal/core"
 )
 
 // ProviderFactory creates a provider for a parsed model name and backend context.

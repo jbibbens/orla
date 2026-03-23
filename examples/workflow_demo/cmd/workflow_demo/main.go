@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	workflowdemo "github.com/dorcha-inc/orla/examples/workflow_demo"
+	workflowdemo "github.com/harvard-cns/orla/examples/workflow_demo"
 )
 
 func main() {

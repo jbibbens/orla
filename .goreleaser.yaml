@@ -69,7 +69,7 @@ notarize:
 # Publish to GitHub releases
 release:
   github:
-    owner: dorcha-inc
+    owner: harvard-cns
     name: orla
   # Mark as pre-release when TEST_MODE=true (for manual test releases)
   # Otherwise, mark as regular release (for tag-based production releases)
@@ -82,14 +82,14 @@ release:
   footer: |
     ---
 
-    Full Changelog: https://github.com/dorcha-inc/orla/compare/{{ .PreviousTag }}...{{ .Tag }}
+    Full Changelog: https://github.com/harvard-cns/orla/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 # Homebrew cask configuration
 homebrew_casks:
   - name: orla
     # Use test tap when TEST_MODE=true, otherwise use production tap
     repository:
-      owner: dorcha-inc
+      owner: harvard-cns
       name: '{{ $testMode := index .Env "TEST_MODE" }}{{ if and $testMode (eq $testMode "true") }}homebrew-orla-test{{ else }}homebrew-orla{{ end }}'
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
 
@@ -99,7 +99,7 @@ homebrew_casks:
       email: bot@goreleaser.com
 
     # The homepage for the project
-    homepage: "https://github.com/dorcha-inc/orla"
+    homepage: "https://github.com/harvard-cns/orla"
 
     # A description for the project
     description: "A dead-simple unix tool for lightweight agents"
@@ -115,16 +115,16 @@ homebrew_casks:
     # Homebrew installs the binary, then we run the install script with --homebrew flag
     # Note: We need to set PATH because post-install hooks run in a clean environment
     # Users can set HOMEBREW_ORLA_SKIP_OLLAMA=1 before installing to skip Ollama installation:
-    #   HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install dorcha-inc/orla/orla
+    #   HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install harvard-cns/orla/orla
     # Note: Homebrew only passes through env vars prefixed with HOMEBREW_
     hooks:
       post:
         install: |
           skip_ollama = ENV["HOMEBREW_ORLA_SKIP_OLLAMA"] == "1"
           if skip_ollama
-            system "/bin/sh", "-c", "export PATH=\"/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew --skip-ollama"
+            system "/bin/sh", "-c", "export PATH=\"/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/main/scripts/install.sh | sh -s -- --homebrew --skip-ollama"
           else
-            system "/bin/sh", "-c", "export PATH=\"/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew"
+            system "/bin/sh", "-c", "export PATH=\"/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/harvard-cns/orla/main/scripts/install.sh | sh -s -- --homebrew"
           end
 
 # Generate checksums

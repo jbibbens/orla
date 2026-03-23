@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/dorcha-inc/orla/internal/agent"
+	"github.com/harvard-cns/orla/internal/agent"
 	"github.com/spf13/cobra"
 )
 

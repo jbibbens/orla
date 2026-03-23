@@ -11,9 +11,9 @@ import (
 	"os"
 	"time"
 
-	orla "github.com/dorcha-inc/orla/pkg/api"
+	orla "github.com/harvard-cns/orla/pkg/api"
 
-	"github.com/dorcha-inc/orla/examples/dag_math_eval/shared"
+	"github.com/harvard-cns/orla/examples/dag_math_eval/shared"
 )
 
 const (

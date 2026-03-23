@@ -9,7 +9,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dorcha-inc/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/core"
 )
 
 func TestNormalizeSchemaToMap_MapPassthrough(t *testing.T) {

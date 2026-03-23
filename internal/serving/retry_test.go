@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dorcha-inc/orla/internal/model"
+	"github.com/harvard-cns/orla/internal/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/assert"

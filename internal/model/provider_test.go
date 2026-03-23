@@ -3,8 +3,8 @@ package model
 import (
 	"testing"
 
-	"github.com/dorcha-inc/orla/internal/config"
-	"github.com/dorcha-inc/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/config"
+	"github.com/harvard-cns/orla/internal/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

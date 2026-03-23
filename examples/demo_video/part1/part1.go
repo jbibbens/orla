@@ -8,7 +8,7 @@ import (
 	"context"
 	"log"
 
-	workflowdemo "github.com/dorcha-inc/orla/examples/workflow_demo"
+	workflowdemo "github.com/harvard-cns/orla/examples/workflow_demo"
 )
 
 // Run executes Part 1 of the demo.

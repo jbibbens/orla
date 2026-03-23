@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/dorcha-inc/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/core"
 )
 
 type CapturedOutput struct {

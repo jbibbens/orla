@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/dorcha-inc/orla/examples/dag_math_eval/eval"
-	"github.com/dorcha-inc/orla/examples/dag_math_eval/shared"
+	"github.com/harvard-cns/orla/examples/dag_math_eval/eval"
+	"github.com/harvard-cns/orla/examples/dag_math_eval/shared"
 )
 
 func main() {

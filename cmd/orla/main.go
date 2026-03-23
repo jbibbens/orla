@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/dorcha-inc/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/core"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )

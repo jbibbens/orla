@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dorcha-inc/orla/internal/core"
-	"github.com/dorcha-inc/orla/internal/model"
-	"github.com/dorcha-inc/orla/internal/serving"
-	_ "github.com/dorcha-inc/orla/internal/serving/metrics" // register Prometheus metrics
+	"github.com/harvard-cns/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/model"
+	"github.com/harvard-cns/orla/internal/serving"
+	_ "github.com/harvard-cns/orla/internal/serving/metrics" // register Prometheus metrics
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"

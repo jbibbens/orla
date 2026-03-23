@@ -18,7 +18,7 @@ import (
 	"log"
 	"os"
 
-	concurrentstagesdemo "github.com/dorcha-inc/orla/examples/concurrent_stages_demo"
+	concurrentstagesdemo "github.com/harvard-cns/orla/examples/concurrent_stages_demo"
 )
 
 func main() {

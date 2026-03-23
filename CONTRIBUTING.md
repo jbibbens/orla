@@ -16,7 +16,7 @@ This project adheres to a Code of Conduct that all contributors are expected to 
    ```
 3. Add the upstream remote:
    ```bash
-   git remote add upstream https://github.com/dorcha-inc/orla.git
+   git remote add upstream https://github.com/harvard-cns/orla.git
    ```
 
 ## development setup

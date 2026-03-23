@@ -11,8 +11,8 @@ import (
 	"log"
 	"os"
 
-	workflowdemo "github.com/dorcha-inc/orla/examples/workflow_demo"
-	"github.com/dorcha-inc/orla/examples/demo_video/part3"
+	workflowdemo "github.com/harvard-cns/orla/examples/workflow_demo"
+	"github.com/harvard-cns/orla/examples/demo_video/part3"
 )
 
 func main() {

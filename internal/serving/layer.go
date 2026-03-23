@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dorcha-inc/orla/internal/core"
-	"github.com/dorcha-inc/orla/internal/model"
-	"github.com/dorcha-inc/orla/internal/serving/memory"
+	"github.com/harvard-cns/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/model"
+	"github.com/harvard-cns/orla/internal/serving/memory"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )

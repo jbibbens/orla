@@ -10,7 +10,7 @@
 #   ./install.sh --skip-ollama
 #   ./install.sh --homebrew --skip-ollama
 #   For Homebrew users, you can also set HOMEBREW_ORLA_SKIP_OLLAMA=1 before installing:
-#   HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install dorcha-inc/orla/orla
+#   HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install harvard-cns/orla/orla
 #   This mode is useful if you want to use Orla with Homebrew's version of Ollama. It will not install
 #   Orla's binary, but will install Ollama and set everything up for you. The Orla binary will be installed
 #   by Homebrew directly.
@@ -69,9 +69,9 @@ check_curl
 get_latest_release() {
     status "fetching latest orla release from github"
     if [ -n "${GITHUB_TOKEN:-}" ]; then
-        LATEST_RELEASE=$(curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/repos/dorcha-inc/orla/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+        LATEST_RELEASE=$(curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/repos/harvard-cns/orla/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
     else
-        LATEST_RELEASE=$(curl -fsSL https://api.github.com/repos/dorcha-inc/orla/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+        LATEST_RELEASE=$(curl -fsSL https://api.github.com/repos/harvard-cns/orla/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
     fi
     if [ -z "$LATEST_RELEASE" ]; then
         error "failed to determine latest orla release version from github"
@@ -92,7 +92,7 @@ get_download_url() {
     fi
 
     status "fetching download url for orla release $LOCAL_LATEST_RELEASE for $PLATFORM $ARCH from github"
-    DOWNLOAD_URL="https://github.com/dorcha-inc/orla/releases/download/${LOCAL_LATEST_RELEASE}/${BINARY_NAME}"
+    DOWNLOAD_URL="https://github.com/harvard-cns/orla/releases/download/${LOCAL_LATEST_RELEASE}/${BINARY_NAME}"
     status "download url: $DOWNLOAD_URL"
     echo "$DOWNLOAD_URL"
 }
@@ -325,7 +325,7 @@ check_default_model() {
     status "checking for default model..."
 
     if ! available ollama; then
-        error "ollama is not installed somehow (even though we verified it earlier) please start a github issue at https://github.com/dorcha-inc/orla/issues"
+        error "ollama is not installed somehow (even though we verified it earlier) please start a github issue at https://github.com/harvard-cns/orla/issues"
     fi
 
     # Wait for Ollama API to be ready before checking/pulling models
@@ -480,7 +480,7 @@ install_go() {
 
 build_and_install_orla() {
     status "building and installing orla..."
-    if go install github.com/dorcha-inc/orla/cmd/orla@latest; then
+    if go install github.com/harvard-cns/orla/cmd/orla@latest; then
         success "orla installed successfully :-)"
     else
         error "failed to install orla :-("
@@ -575,4 +575,4 @@ echo ""
 echo "try it out:"
 echo "  orla agent \"hello world\""
 echo ""
-echo "For more information, visit: https://github.com/dorcha-inc/orla"
+echo "For more information, visit: https://github.com/harvard-cns/orla"

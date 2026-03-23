@@ -18,10 +18,10 @@ import (
 	"sync"
 	"time"
 
-	orla "github.com/dorcha-inc/orla/pkg/api"
+	orla "github.com/harvard-cns/orla/pkg/api"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dorcha-inc/orla/examples/swe_bench_lite/shared"
+	"github.com/harvard-cns/orla/examples/swe_bench_lite/shared"
 )
 
 const (

@@ -11,7 +11,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 	"go.uber.org/zap"
 
-	"github.com/dorcha-inc/orla/internal/core"
+	"github.com/harvard-cns/orla/internal/core"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
