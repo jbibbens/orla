@@ -119,5 +119,10 @@
     // Editor settings for Go
     "editor.suggest.snippetsPreventQuickSuggestions": false,
     "editor.snippetSuggestions": "top",
-    "mesonbuild.selectRootDir": false
+    "mesonbuild.selectRootDir": false,
+    // Python (pyorla SDK): uv-managed venv so third-party imports (e.g. httpx) resolve for Pylance/Mypy
+    "python.defaultInterpreterPath": "${workspaceFolder}/pyorla/.venv/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/pyorla/src"
+    ]
 }

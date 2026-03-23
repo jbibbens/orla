@@ -24,3 +24,12 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
 ]
+
+# Pyright/Pylance: use the uv-managed venv and src layout when analyzing this package
+# (avoids "could not be resolved" for deps like httpx when the interpreter is unset).
+[tool.pyright]
+include = ["src"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.11"
+extraPaths = ["src"]
