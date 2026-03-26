@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
@@ -239,8 +240,8 @@ def _parse_execute_response(data: dict) -> InferenceResponse:
         raise OrlaError(f"execution failed: {data.get('error', 'unknown')}")
     r = data.get("response", {})
     metrics = None
-    if "metrics" in r:
-        m = r["metrics"]
+    m = r.get("metrics")
+    if isinstance(m, dict):
         metrics = InferenceResponseMetrics(
             ttft_ms=m.get("ttft_ms", 0),
             tpot_ms=m.get("tpot_ms", 0),
@@ -258,9 +259,6 @@ def _parse_execute_response(data: dict) -> InferenceResponse:
         tool_calls=tool_calls,
         metrics=metrics,
     )
-
-
-import json as _json  # noqa: E402
 
 
 def _iter_sse_events(lines: Iterator[str]) -> Iterator[StreamEvent]:
@@ -288,8 +286,8 @@ def _parse_sse_line(line: str, state: dict[str, str]) -> StreamEvent | None:
 
 def _build_stream_event(event_type: str, data_str: str) -> StreamEvent | None:
     try:
-        data = _json.loads(data_str)
-    except _json.JSONDecodeError:
+        data = json.loads(data_str)
+    except json.JSONDecodeError:
         return None
 
     if event_type == "content":

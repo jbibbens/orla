@@ -3,7 +3,8 @@
 import pytest
 import httpx
 
-from pyorla.client import OrlaClient, OrlaError, _raise_http
+from pyorla.client import OrlaClient, OrlaError, _parse_execute_response, _raise_http
+from pyorla.types import InferenceResponseMetrics
 
 
 def test_orla_client_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,3 +46,35 @@ def test_orla_error_message_str() -> None:
     e = OrlaError("x", status_code=418)
     assert str(e) == "x"
     assert e.status_code == 418
+
+
+def test_parse_execute_response_metrics_null() -> None:
+    """Orla may send ``metrics: null``; client must not assume a dict."""
+    data = {
+        "success": True,
+        "response": {"content": "ok", "thinking": "", "metrics": None},
+    }
+    r = _parse_execute_response(data)
+    assert r.content == "ok"
+    assert r.metrics is None
+
+
+def test_parse_execute_response_metrics_dict() -> None:
+    data = {
+        "success": True,
+        "response": {
+            "content": "",
+            "metrics": {"ttft_ms": 12, "prompt_tokens": 3, "completion_tokens": 1},
+        },
+    }
+    r = _parse_execute_response(data)
+    assert r.metrics == InferenceResponseMetrics(
+        ttft_ms=12,
+        tpot_ms=0,
+        prompt_tokens=3,
+        completion_tokens=1,
+        queue_wait_ms=0,
+        scheduler_decision_ms=0,
+        dispatch_ms=0,
+        backend_latency_ms=0,
+    )
