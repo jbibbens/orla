@@ -1,5 +1,5 @@
 # Run tests and build when pyorla sources or this workflow change.
-name: pyorla CI
+name: pyorla-build
 
 on:
   pull_request:

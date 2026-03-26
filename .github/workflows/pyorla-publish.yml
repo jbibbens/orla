@@ -8,7 +8,7 @@
 #    Owner: harvard-cns, Repository: orla, Workflow: pyorla-publish.yml, Environment: pypi
 # 3. GitHub repo → Settings → Environments → pypi (optional protection rules).
 #
-name: pyorla publish
+name: pyorla-publish
 
 on:
   push:
