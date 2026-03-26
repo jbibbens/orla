@@ -1,4 +1,4 @@
-"""Stage mapping — pre-execution planning. Mirrors Go pkg/api/stage_mapping.go."""
+"""Stage mapping — pre-execution planning and backend assignment."""
 
 from __future__ import annotations
 
@@ -46,10 +46,7 @@ class StageMapping(ABC):
 
 
 class ExplicitStageMapping(StageMapping):
-    """Validates every stage already has a backend assigned.
-
-    Mirrors Go ``ExplicitStageMapping``.
-    """
+    """Validates every stage already has a backend assigned."""
 
     def map(self, input: StageMappingInput) -> StageMappingOutput:
         output = StageMappingOutput()
@@ -71,7 +68,7 @@ class ExplicitStageMapping(StageMapping):
 def apply_stage_mapping_output(
     stages: list[Stage], output: StageMappingOutput
 ) -> None:
-    """Apply mapping output to stages. Mirrors Go ``ApplyStageMappingOutput``."""
+    """Apply mapping output to stages."""
     for stage in stages:
         assignment = output.assignments.get(stage.id)
         if assignment is None:

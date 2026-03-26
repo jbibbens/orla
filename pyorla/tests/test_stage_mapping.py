@@ -44,5 +44,6 @@ def test_apply_stage_mapping_output():
     output.assignments[s1.id].max_tokens = 200
 
     apply_stage_mapping_output([s1], output)
+    assert s1.backend is not None
     assert s1.backend.name == "b2"
     assert s1.max_tokens == 200

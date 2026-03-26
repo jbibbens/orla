@@ -1,7 +1,8 @@
-"""HTTP client for the Orla server. Mirrors Go OrlaClient (pkg/api/client.go)."""
+"""HTTP client for the Orla server."""
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
@@ -17,19 +18,39 @@ from pyorla.types import (
 
 
 class OrlaError(Exception):
-    """Raised when the Orla server returns an error."""
+    """Raised when the Orla server returns an error or an HTTP call fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        body: str | None = None,
+        request_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body
+        self.request_id = request_id
 
 
 class OrlaClient:
     """Sync + async HTTP client for the Orla daemon.
 
-    Mirrors Go ``OrlaClient`` from ``pkg/api/client.go``.
+    Point *base_url* at a running daemon (e.g. ``http://localhost:8081``), or use
+    :meth:`from_env` to read ``ORLA_URL``. To spawn ``orla serve`` on loopback from
+    Python, use :func:`pyorla.local_server.orla_runtime` as a context manager.
     """
 
     def __init__(self, base_url: str = "http://localhost:8081") -> None:
         self.base_url = base_url.rstrip("/")
         self._sync = httpx.Client(base_url=self.base_url, timeout=300)
         self._async = httpx.AsyncClient(base_url=self.base_url, timeout=300)
+
+    @classmethod
+    def from_env(cls, default: str = "http://localhost:8081") -> OrlaClient:
+        """Build a client using ``ORLA_URL`` if set, otherwise *default*."""
+        return cls(os.environ.get("ORLA_URL", default))
 
     # ------------------------------------------------------------------
     # Health
@@ -38,11 +59,11 @@ class OrlaClient:
     def health(self) -> None:
         """Check Orla daemon health. Raises on failure."""
         resp = self._sync.get("/api/v1/health")
-        resp.raise_for_status()
+        _raise_http(resp)
 
     async def ahealth(self) -> None:
         resp = await self._async.get("/api/v1/health")
-        resp.raise_for_status()
+        await _araise_http(resp)
 
     # ------------------------------------------------------------------
     # Register backend
@@ -52,7 +73,7 @@ class OrlaClient:
         """Register an LLM backend with the daemon."""
         payload = _backend_to_dict(backend)
         resp = self._sync.post("/api/v1/backends", json=payload)
-        resp.raise_for_status()
+        _raise_http(resp)
         data = resp.json()
         if not data.get("success"):
             raise OrlaError(f"register backend failed: {data.get('error', 'unknown')}")
@@ -60,7 +81,7 @@ class OrlaClient:
     async def aregister_backend(self, backend: LLMBackend) -> None:
         payload = _backend_to_dict(backend)
         resp = await self._async.post("/api/v1/backends", json=payload)
-        resp.raise_for_status()
+        await _araise_http(resp)
         data = resp.json()
         if not data.get("success"):
             raise OrlaError(f"register backend failed: {data.get('error', 'unknown')}")
@@ -70,16 +91,16 @@ class OrlaClient:
     # ------------------------------------------------------------------
 
     def execute(self, req: ExecuteRequest) -> InferenceResponse:
-        """Run inference on a named backend. Mirrors Go OrlaClient.Execute."""
+        """Run inference on a named backend."""
         payload = req.to_dict()
         resp = self._sync.post("/api/v1/execute", json=payload)
-        resp.raise_for_status()
+        _raise_http(resp)
         return _parse_execute_response(resp.json())
 
     async def aexecute(self, req: ExecuteRequest) -> InferenceResponse:
         payload = req.to_dict()
         resp = await self._async.post("/api/v1/execute", json=payload)
-        resp.raise_for_status()
+        await _araise_http(resp)
         return _parse_execute_response(resp.json())
 
     # ------------------------------------------------------------------
@@ -87,18 +108,18 @@ class OrlaClient:
     # ------------------------------------------------------------------
 
     def execute_stream(self, req: ExecuteRequest) -> Iterator[StreamEvent]:
-        """Run streaming inference. Mirrors Go OrlaClient.ExecuteStream."""
+        """Run streaming inference."""
         payload = req.to_dict()
         payload["stream"] = True
         with self._sync.stream("POST", "/api/v1/execute", json=payload) as resp:
-            resp.raise_for_status()
+            _raise_http(resp)
             yield from _iter_sse_events(resp.iter_lines())
 
     async def aexecute_stream(self, req: ExecuteRequest) -> AsyncIterator[StreamEvent]:
         payload = req.to_dict()
         payload["stream"] = True
         async with self._async.stream("POST", "/api/v1/execute", json=payload) as resp:
-            resp.raise_for_status()
+            await _araise_http(resp)
             async for line in resp.aiter_lines():
                 ev = _parse_sse_line(line, {})
                 if ev is not None:
@@ -114,14 +135,14 @@ class OrlaClient:
             "/api/v1/workflow/complete",
             json={"workflow_id": workflow_id, "backends": backends},
         )
-        resp.raise_for_status()
+        _raise_http(resp)
 
     async def aworkflow_complete(self, workflow_id: str, backends: list[str]) -> None:
         resp = await self._async.post(
             "/api/v1/workflow/complete",
             json={"workflow_id": workflow_id, "backends": backends},
         )
-        resp.raise_for_status()
+        await _araise_http(resp)
 
     # ------------------------------------------------------------------
     # Cleanup
@@ -137,6 +158,49 @@ class OrlaClient:
 # ======================================================================
 # Helpers
 # ======================================================================
+
+
+def _raise_http(resp: httpx.Response) -> None:
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        r = e.response
+        text = (r.text or "")[:2048]
+        rid = None
+        try:
+            data = r.json()
+            if isinstance(data, dict):
+                rid = data.get("request_id") or data.get("requestId")
+        except Exception:
+            pass
+        raise OrlaError(
+            f"HTTP {r.status_code} {r.reason_phrase}",
+            status_code=r.status_code,
+            body=text or None,
+            request_id=rid if isinstance(rid, str) else None,
+        ) from e
+
+
+async def _araise_http(resp: httpx.Response) -> None:
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        r = e.response
+        text = (r.text or "")[:2048]
+        rid = None
+        try:
+            data = r.json()
+            if isinstance(data, dict):
+                rid = data.get("request_id") or data.get("requestId")
+        except Exception:
+            pass
+        raise OrlaError(
+            f"HTTP {r.status_code} {r.reason_phrase}",
+            status_code=r.status_code,
+            body=text or None,
+            request_id=rid if isinstance(rid, str) else None,
+        ) from e
+
 
 def _backend_to_dict(b: LLMBackend) -> dict[str, Any]:
     d: dict[str, Any] = {

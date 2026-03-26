@@ -1,4 +1,4 @@
-"""Stage — primary execution unit. Mirrors Go Stage (pkg/api/stage.go)."""
+"""Stage — primary execution unit for workflows and inference."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from pyorla.types import (
 )
 
 if TYPE_CHECKING:
+    from pyorla.chat_model import ChatOrla
     from pyorla.client import OrlaClient
 
 
@@ -34,7 +35,7 @@ StreamHandler = Callable[[StreamEvent], None]
 
 @dataclass
 class StageResultData:
-    """Wraps the output of a stage execution. Mirrors Go StageResult."""
+    """Wraps the output of a stage execution."""
 
     response: InferenceResponse | None = None
     messages: list[Message] = field(default_factory=list)
@@ -53,7 +54,7 @@ EXECUTION_MODE_AGENT_LOOP = "agent_loop"
 
 
 class Stage:
-    """Primary execution unit in Orla. Mirrors Go ``Stage``.
+    """Primary execution unit in Orla.
 
     Each Stage has a globally unique ID and can execute LLM inference
     calls directly through its attached ``OrlaClient``.
@@ -91,7 +92,7 @@ class Stage:
 
         self._workflow_id: str = ""
 
-    # ---- Setters (mirror Go setters) ----
+    # ---- Setters ----
 
     def set_max_tokens(self, n: int) -> None:
         self.max_tokens = n
@@ -147,7 +148,7 @@ class Stage:
     # ---- Tools ----
 
     def add_tool(self, tool: Tool) -> None:
-        """Add a tool to this stage. Mirrors Go Stage.AddTool."""
+        """Add a tool to this stage."""
         self.tools[tool.name] = tool
 
     # ---- Request building ----
@@ -251,8 +252,8 @@ class Stage:
 
     # ---- LangChain integration ----
 
-    def as_chat_model(self) -> "ChatOrla":  # noqa: F821
+    def as_chat_model(self) -> ChatOrla:
         """Create a ``ChatOrla`` (LangChain BaseChatModel) backed by this stage."""
-        from pyorla.chat_model import ChatOrla
+        from pyorla.chat_model import ChatOrla as _ChatOrla
 
-        return ChatOrla(stage=self)
+        return _ChatOrla(stage=self)

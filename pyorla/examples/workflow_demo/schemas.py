@@ -1,4 +1,4 @@
-"""Structured-output schemas for the workflow demo. Mirrors Go workflow_demo schemas."""
+"""Structured-output schemas for the workflow demo."""
 
 CLASSIFY_SCHEMA: dict = {
     "type": "object",

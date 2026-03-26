@@ -1,8 +1,19 @@
-"""pyorla — Python SDK for Orla inference scheduling and orchestration."""
+"""pyorla — Python SDK for Orla inference scheduling and orchestration.
+
+**Start here**
+
+- **HTTP client:** `OrlaClient`, `OrlaClient.from_env()` (`ORLA_URL`), `OrlaError`
+- **Local daemon (subprocess):** `orla_runtime`, `OrlaBinaryNotFoundError`
+- **Stages / workflows:** `Stage`, `Workflow`, types and backend helpers
+- **LangChain:** `ChatOrla`
+- **Tools:** `orla_tool`, `tool_from_langchain`, `Tool`, `new_tool`
+"""
 
 from pyorla.backend import new_ollama_backend, new_sglang_backend, new_vllm_backend
 from pyorla.chat_model import ChatOrla
 from pyorla.client import OrlaClient, OrlaError
+from pyorla.langchain_tools import tool_from_langchain
+from pyorla.local_server import OrlaBinaryNotFoundError, orla_runtime, resolve_orla_binary
 from pyorla.memory import (
     CacheEvent,
     DefaultMemoryPolicy,
@@ -24,6 +35,7 @@ from pyorla.stage_mapping import (
     StageMappingOutput,
     apply_stage_mapping_output,
 )
+from pyorla.tool_decorators import orla_tool
 from pyorla.tools import (
     Tool,
     ToolCall,
@@ -58,6 +70,9 @@ __all__ = [
     # Client
     "OrlaClient",
     "OrlaError",
+    "OrlaBinaryNotFoundError",
+    "resolve_orla_binary",
+    "orla_runtime",
     # Chat model (LangChain)
     "ChatOrla",
     # Stage
@@ -81,7 +96,9 @@ __all__ = [
     "ToolCall",
     "ToolResult",
     "new_tool",
+    "orla_tool",
     "tool_call_from_raw",
+    "tool_from_langchain",
     "tool_runner_from_schema",
     # Memory
     "MemoryPolicy",

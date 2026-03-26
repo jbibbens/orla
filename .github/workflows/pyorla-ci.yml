@@ -1,0 +1,39 @@
+# Run tests and build when pyorla sources or this workflow change.
+name: pyorla CI
+
+on:
+  pull_request:
+    paths:
+      - "pyorla/**"
+      - ".github/workflows/pyorla-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "pyorla/**"
+      - ".github/workflows/pyorla-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pyorla
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync, typecheck, test, build
+        run: |
+          uv sync --all-groups
+          uv run ty check
+          uv run pytest
+          uv build

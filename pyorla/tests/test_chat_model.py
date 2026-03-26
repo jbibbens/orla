@@ -1,8 +1,16 @@
 """Tests for pyorla.chat_model."""
 
+from langchain_core.tools import tool
+
 from pyorla.chat_model import ChatOrla, _langchain_tool_to_orla
 from pyorla.stage import Stage
 from pyorla.types import LLMBackend
+
+
+@tool
+def _bound_lc_tool(x: str) -> str:
+    """Echo."""
+    return x
 
 
 def _backend() -> LLMBackend:
@@ -32,6 +40,18 @@ def test_chat_orla_bind_tools():
     ])
     assert isinstance(bound, ChatOrla)
     assert "search" in bound.stage.tools
+
+
+def test_chat_orla_bind_tools_langchain_has_run():
+    s = Stage("s1", _backend())
+    llm = ChatOrla(stage=s)
+    bound = llm.bind_tools([_bound_lc_tool])
+    assert isinstance(bound, ChatOrla)
+    t = bound.stage.tools[_bound_lc_tool.name]
+    assert t.run is not None
+    r = t.run({"x": "hi"})
+    assert not r.is_error
+    assert r.output_values == {"result": "hi"}
 
 
 def test_langchain_tool_dict_to_orla():

@@ -1,4 +1,4 @@
-"""Backend constructors mirroring Go (pkg/api/backend.go)."""
+"""Convenience constructors for :class:`~pyorla.types.LLMBackend`."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def _model_id_for_backend_type(backend_type: str, model_id: str) -> str:
 
 
 def new_vllm_backend(model_id: str, endpoint: str) -> LLMBackend:
-    """Create a vLLM backend. Mirrors Go NewVLLMBackend."""
+    """Create a vLLM backend (OpenAI-compatible API)."""
     return LLMBackend(
         name=_random_backend_name(),
         endpoint=endpoint,
@@ -32,7 +32,7 @@ def new_vllm_backend(model_id: str, endpoint: str) -> LLMBackend:
 
 
 def new_sglang_backend(model_id: str, endpoint: str) -> LLMBackend:
-    """Create an SGLang backend. Mirrors Go NewSGLangBackend."""
+    """Create an SGLang backend."""
     return LLMBackend(
         name=_random_backend_name(),
         endpoint=endpoint,
@@ -42,7 +42,7 @@ def new_sglang_backend(model_id: str, endpoint: str) -> LLMBackend:
 
 
 def new_ollama_backend(model_id: str, endpoint: str) -> LLMBackend:
-    """Create an Ollama backend. Mirrors Go NewOllamaBackend.
+    """Create an Ollama backend.
 
     endpoint should be the base Ollama URL (e.g. "http://ollama:11434");
     "/v1" is appended automatically.

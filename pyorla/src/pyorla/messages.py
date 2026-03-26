@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from langchain_core.messages import (
@@ -21,7 +22,7 @@ from pyorla.types import InferenceResponse, Message
 # ======================================================================
 
 
-def langchain_to_orla(msgs: list[BaseMessage]) -> list[Message]:
+def langchain_to_orla(msgs: Sequence[BaseMessage]) -> list[Message]:
     """Convert a list of LangChain messages to Orla Messages."""
     return [_lc_msg_to_orla(m) for m in msgs]
 

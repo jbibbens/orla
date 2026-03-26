@@ -1,4 +1,4 @@
-"""Customer support triage demo using pyorla Workflow API (mirrors Go workflow_demo)."""
+"""Customer support triage demo using pyorla Workflow API."""
 
 from __future__ import annotations
 
@@ -26,10 +26,10 @@ from pyorla import (
 from pyorla.stage import StageResultData
 
 from examples.workflow_demo.mock_tools import (
-    read_policy_yaml_tool,
-    read_team_descriptions_tool,
-    send_email_tool,
-    send_ticket_tool,
+    read_policy_yaml,
+    read_team_descriptions,
+    send_email,
+    send_ticket,
 )
 from examples.workflow_demo.schemas import (
     CLASSIFY_SCHEMA,
@@ -107,7 +107,7 @@ def run(ticket: str) -> None:
     policy_stage.set_scheduling_policy(SCHEDULING_POLICY_PRIORITY)
     policy_stage.set_chat_template_kwargs(no_thinking)
     policy_stage.set_response_format(StructuredOutputRequest(name="policy_decision", schema=POLICY_DECISION_SCHEMA))
-    policy_stage.add_tool(read_policy_yaml_tool())
+    policy_stage.add_tool(read_policy_yaml)
 
     def policy_prompt_builder(results: dict[str, StageResultData]) -> str:
         classification = results.get(classify.id)
@@ -133,7 +133,7 @@ def run(ticket: str) -> None:
     reply_stage.set_scheduling_policy(SCHEDULING_POLICY_PRIORITY)
     reply_stage.set_chat_template_kwargs(no_thinking)
     reply_stage.set_response_format(StructuredOutputRequest(name="reply_confirmation", schema=REPLY_CONFIRMATION_SCHEMA))
-    reply_stage.add_tool(send_email_tool())
+    reply_stage.add_tool(send_email)
 
     def reply_prompt_builder(results: dict[str, StageResultData]) -> str:
         classification = results.get(classify.id)
@@ -190,9 +190,9 @@ def run(ticket: str) -> None:
     route_stage.set_temperature(0)
     route_stage.set_scheduling_policy(SCHEDULING_POLICY_PRIORITY)
     route_stage.set_chat_template_kwargs(no_thinking)
-    route_stage.add_tool(send_email_tool())
-    route_stage.add_tool(read_team_descriptions_tool())
-    route_stage.add_tool(send_ticket_tool())
+    route_stage.add_tool(send_email)
+    route_stage.add_tool(read_team_descriptions)
+    route_stage.add_tool(send_ticket)
 
     def route_prompt_builder(results: dict[str, StageResultData]) -> str:
         classification = results.get(classify.id)

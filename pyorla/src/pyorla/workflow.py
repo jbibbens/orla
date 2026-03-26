@@ -1,7 +1,4 @@
-"""Workflow — DAG of Stages with dependency-aware scheduling.
-
-Mirrors Go Workflow from pkg/api/workflow.go.
-"""
+"""Workflow — DAG of Stages with dependency-aware scheduling."""
 
 from __future__ import annotations
 
@@ -27,10 +24,7 @@ def _random_workflow_id() -> str:
 
 
 class Workflow:
-    """A DAG of Stages with dependency-aware scheduling.
-
-    Mirrors Go ``Workflow`` from ``pkg/api/workflow.go``.
-    """
+    """A DAG of Stages with dependency-aware scheduling."""
 
     def __init__(self, client: OrlaClient) -> None:
         self.client = client

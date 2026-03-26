@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any, cast
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.language_models.base import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessageChunk, BaseMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
 
 from pyorla.client import OrlaClient
+from pyorla.langchain_tools import tool_from_langchain
 from pyorla.messages import langchain_to_orla, orla_response_to_ai_message
 from pyorla.stage import Stage
 from pyorla.tools import Tool
@@ -43,8 +47,11 @@ class ChatOrla(BaseChatModel):
         stage: Stage | None = None,
         **kwargs: Any,
     ) -> None:
+        # BaseChatModel's static __init__ signature does not list subclass fields like
+        # ``stage``; Pydantic still accepts them at runtime. Merge into one mapping so
+        # type checkers do not report an unexpected keyword on ``super().__init__``.
         if stage is not None:
-            super().__init__(stage=stage, **kwargs)
+            resolved_stage = stage
         else:
             client = OrlaClient(base_url or "http://localhost:8081")
             auto_backend = LLMBackend(
@@ -59,7 +66,9 @@ class ChatOrla(BaseChatModel):
                 auto_stage.set_temperature(kwargs.pop("temperature"))
             if "max_tokens" in kwargs:
                 auto_stage.set_max_tokens(kwargs.pop("max_tokens"))
-            super().__init__(stage=auto_stage, **kwargs)
+            resolved_stage = auto_stage
+
+        super().__init__(**cast(Any, {"stage": resolved_stage, **kwargs}))
 
     @property
     def _llm_type(self) -> str:
@@ -77,17 +86,29 @@ class ChatOrla(BaseChatModel):
     # bind_tools
     # ------------------------------------------------------------------
 
-    def bind_tools(self, tools: list[Any], **kwargs: Any) -> ChatOrla:
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | Callable | BaseTool],
+        *,
+        tool_choice: str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
         """Bind LangChain-style tools to the underlying Orla Stage.
 
-        Accepts LangChain ``BaseTool`` instances or plain dicts with
-        ``name``, ``description``, and ``parameters``/``input_schema``.
+        ``BaseTool`` instances (including ``@tool``) are converted to executable
+        ``pyorla.tools.Tool`` values so ``Stage.run_tool_call`` works. Plain dicts
+        with ``name``, ``description``, and ``parameters``/``input_schema`` remain
+        schema-only (no ``run``).
+
+        ``tool_choice`` and other kwargs are accepted for API parity with
+        ``BaseChatModel``; they are not yet forwarded to the Orla stage.
         """
+        _ = (tool_choice, kwargs)
         new_stage = _clone_stage(self.stage)
         for t in tools:
             orla_tool = _langchain_tool_to_orla(t)
             new_stage.add_tool(orla_tool)
-        return ChatOrla(stage=new_stage)
+        return cast(Runnable[LanguageModelInput, AIMessage], ChatOrla(stage=new_stage))
 
     # ------------------------------------------------------------------
     # _generate (sync, non-streaming)
@@ -182,12 +203,17 @@ def _langchain_tool_to_orla(tool: Any) -> Tool:
             description=tool.get("description", ""),
             input_schema=tool.get("parameters", tool.get("input_schema", {})),
         )
+    if isinstance(tool, BaseTool):
+        return tool_from_langchain(tool)
     name = getattr(tool, "name", str(tool))
     description = getattr(tool, "description", "")
-    schema = {}
+    schema: dict[str, Any] = {}
     if hasattr(tool, "args_schema") and tool.args_schema is not None:
-        schema = tool.args_schema.model_json_schema()
-    elif hasattr(tool, "get_input_schema"):
+        if isinstance(tool.args_schema, dict):
+            pass
+        else:
+            schema = tool.args_schema.model_json_schema()
+    if not schema and hasattr(tool, "get_input_schema"):
         schema = tool.get_input_schema().model_json_schema()
     return Tool(
         name=name,

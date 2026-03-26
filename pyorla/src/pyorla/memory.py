@@ -1,4 +1,4 @@
-"""Memory policy types. Mirrors Go pkg/api/memory.go."""
+"""Memory and KV-cache policy types for multi-stage workflows."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class CacheEvent:
 
 
 class MemoryPolicy(ABC):
-    """Determines cache actions at workflow level. Mirrors Go MemoryPolicy."""
+    """Determines cache actions at workflow level."""
 
     @abstractmethod
     def decide(self, event: CacheEvent) -> str:
@@ -64,10 +64,7 @@ class FlushAtBoundaryPolicy(MemoryPolicy):
 
 
 class DefaultMemoryPolicy(MemoryPolicy):
-    """Composed policy: preserve-on-small-increment then flush-at-boundary.
-
-    Mirrors Go ``NewDefaultMemoryPolicy``.
-    """
+    """Composed policy: preserve-on-small-increment then flush-at-boundary."""
 
     def __init__(self, preserve_threshold: int = 256) -> None:
         self._policies: list[MemoryPolicy] = [

@@ -1,4 +1,4 @@
-"""Core types mirroring the Go SDK (pkg/api/client.go, pkg/api/backend.go)."""
+"""Core request/response and wire types for the Orla HTTP API."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class LLMBackend:
-    """Mirrors Go RegisterBackendRequest / LLMBackend."""
+    """Registered LLM backend (OpenAI-compatible or SGLang)."""
 
     name: str
     endpoint: str
@@ -26,14 +26,14 @@ class LLMBackend:
 
 @dataclass
 class SchedulingHints:
-    """Mirrors Go SchedulingHints."""
+    """Optional hints for stage/request scheduling."""
 
     priority: int | None = None
 
 
 @dataclass
 class CacheHints:
-    """Mirrors Go CacheHints."""
+    """Optional KV-cache behavior hints."""
 
     preserve_threshold_tokens: int | None = None
     flush_on_complete: bool | None = None
@@ -41,7 +41,7 @@ class CacheHints:
 
 @dataclass
 class Message:
-    """Mirrors Go model.Message / pkg/api Message."""
+    """Chat message for execute requests."""
 
     role: str
     content: str
@@ -52,7 +52,7 @@ class Message:
 
 @dataclass
 class StructuredOutputRequest:
-    """Mirrors Go StructuredOutputRequest."""
+    """Structured JSON output (response_format) for the model."""
 
     name: str
     schema: dict
@@ -61,7 +61,7 @@ class StructuredOutputRequest:
 
 @dataclass
 class ExecuteRequest:
-    """Mirrors Go pkg/api ExecuteRequest."""
+    """Non-streaming or streaming execute request payload."""
 
     backend: str
     stage_id: str = ""
@@ -145,7 +145,7 @@ def _message_to_dict(m: Message) -> dict:
 
 @dataclass
 class InferenceResponseMetrics:
-    """Mirrors Go InferenceResponseMetrics."""
+    """Latency and token metrics from a completed inference."""
 
     ttft_ms: int = 0
     tpot_ms: int = 0
@@ -159,7 +159,7 @@ class InferenceResponseMetrics:
 
 @dataclass
 class InferenceResponse:
-    """Mirrors Go InferenceResponse."""
+    """Assistant output from a completed inference."""
 
     content: str
     thinking: str = ""
@@ -169,7 +169,7 @@ class InferenceResponse:
 
 @dataclass
 class StreamEvent:
-    """Mirrors Go StreamEvent."""
+    """One event from a streaming execute response."""
 
     type: str  # "content" | "thinking" | "tool_call" | "done"
     content: str = ""
@@ -178,17 +178,17 @@ class StreamEvent:
     response: InferenceResponse | None = None
 
 
-# Scheduling policy constants (mirrors Go)
+# Scheduling policy constants
 SCHEDULING_POLICY_FCFS = "fcfs"
 SCHEDULING_POLICY_PRIORITY = "priority"
 REQUEST_SCHEDULING_POLICY_FIFO = "fifo"
 REQUEST_SCHEDULING_POLICY_PRIORITY = "priority"
 
-# Cache policy constants (mirrors Go)
+# Cache policy constants
 CACHE_POLICY_PRESERVE = "preserve"
 CACHE_POLICY_FLUSH = "flush"
 CACHE_POLICY_AUTO = "auto"
 
-# Execution mode constants (mirrors Go)
+# Execution mode constants
 EXECUTION_MODE_SINGLE_SHOT = "single_shot"
 EXECUTION_MODE_AGENT_LOOP = "agent_loop"

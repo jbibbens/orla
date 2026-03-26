@@ -1,4 +1,4 @@
-"""Tool types mirroring Go pkg/api/tool.go."""
+"""Tool definitions and runners for client-side tool execution."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ ToolRunner = Callable[[ToolSchema], "ToolResult"]
 
 @dataclass
 class Tool:
-    """A callable tool. Mirrors Go Tool from pkg/api/tool.go."""
+    """A callable tool with JSON Schema input and optional runner."""
 
     name: str
     description: str
@@ -77,7 +77,7 @@ def new_tool(
     run: ToolRunner,
     output_schema: ToolSchema | None = None,
 ) -> Tool:
-    """Create a new Tool. Mirrors Go NewTool."""
+    """Create a new :class:`Tool`."""
     return Tool(
         name=name,
         description=description,
@@ -90,8 +90,7 @@ def new_tool(
 def tool_call_from_raw(raw: dict[str, Any]) -> ToolCall:
     """Parse a raw tool call dict from InferenceResponse.tool_calls.
 
-    Mirrors Go NewToolCallFromRawToolCall. The expected format is the MCP
-    ``toolCallWithID`` envelope::
+    Expected format is the MCP ``toolCallWithID`` envelope::
 
         {"id": "...", "method": "tools/call", "params": {"name": "...", "arguments": {...}}}
     """
@@ -107,10 +106,7 @@ def tool_call_from_raw(raw: dict[str, Any]) -> ToolCall:
 def tool_runner_from_schema(
     fn: Callable[[ToolSchema], ToolSchema],
 ) -> ToolRunner:
-    """Wrap a simple dict->dict function as a ToolRunner.
-
-    Mirrors Go ToolRunnerFromSchema.
-    """
+    """Wrap a simple dict-to-dict function as a :class:`ToolRunner`."""
 
     def _runner(input_args: ToolSchema) -> ToolResult:
         try:

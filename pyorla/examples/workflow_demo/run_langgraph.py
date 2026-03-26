@@ -36,10 +36,10 @@ from pyorla import (
 from pyorla.types import SCHEDULING_POLICY_FCFS, SCHEDULING_POLICY_PRIORITY, EXECUTION_MODE_AGENT_LOOP
 
 from examples.workflow_demo.mock_tools import (
-    read_policy_yaml_tool,
-    read_team_descriptions_tool,
-    send_email_tool,
-    send_ticket_tool,
+    read_policy_yaml,
+    read_team_descriptions,
+    send_email,
+    send_ticket,
 )
 from examples.workflow_demo.schemas import (
     CLASSIFY_SCHEMA,
@@ -335,7 +335,7 @@ def run(ticket: str) -> None:
     policy_stage.set_response_format(
         StructuredOutputRequest(name="policy_decision", schema=POLICY_DECISION_SCHEMA)
     )
-    policy_stage.add_tool(read_policy_yaml_tool())
+    policy_stage.add_tool(read_policy_yaml)
 
     reply_stage = Stage("reply", heavy)
     reply_stage.client = client
@@ -348,7 +348,7 @@ def run(ticket: str) -> None:
     reply_stage.set_response_format(
         StructuredOutputRequest(name="reply_confirmation", schema=REPLY_CONFIRMATION_SCHEMA)
     )
-    reply_stage.add_tool(send_email_tool())
+    reply_stage.add_tool(send_email)
 
     route_stage = Stage("route_ticket", heavy)
     route_stage.client = client
@@ -358,9 +358,9 @@ def run(ticket: str) -> None:
     route_stage.set_temperature(0)
     route_stage.set_scheduling_policy(SCHEDULING_POLICY_PRIORITY)
     route_stage.set_chat_template_kwargs(no_thinking)
-    route_stage.add_tool(send_email_tool())
-    route_stage.add_tool(read_team_descriptions_tool())
-    route_stage.add_tool(send_ticket_tool())
+    route_stage.add_tool(send_email)
+    route_stage.add_tool(read_team_descriptions)
+    route_stage.add_tool(send_ticket)
 
     # --- Stage mapping ---
     all_stages = [classify_stage, policy_stage, reply_stage, route_stage]
