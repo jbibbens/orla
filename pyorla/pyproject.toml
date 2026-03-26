@@ -1,20 +1,13 @@
 [project]
 name = "pyorla"
-version = "1.0.0"
+version = "1.0.1"
 description = "Python SDK for Orla"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Hayder Tirmazi" }]
 requires-python = ">=3.11"
-keywords = [
-    "orla",
-    "llm",
-    "agent",
-    "langchain",
-    "langgraph",
-    "inference",
-]
+keywords = ["orla", "llm", "agent", "langchain", "langgraph", "inference"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
