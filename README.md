@@ -3,13 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go" alt="Go Version"></a>
   <a href="https://goreportcard.com/report/github.com/harvard-cns/orla"><img src="https://img.shields.io/badge/go%20report-A+-brightgreen.svg?style=flat" alt="Go Report Card"></a>
   <a href="https://www.bestpractices.dev/projects/6573"><img src="https://www.bestpractices.dev/projects/6573/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://github.com/harvard-cns/orla/actions/workflows/build.yml"><img src="https://github.com/harvard-cns/orla/actions/workflows/build.yml/badge.svg" alt="Build"></a>
   <a href="https://github.com/harvard-cns/orla/actions/workflows/pyorla-ci.yml"><img src="https://github.com/harvard-cns/orla/actions/workflows/pyorla-ci.yml/badge.svg" alt="pyorla CI"></a>
   <a href="https://pypi.org/project/pyorla/"><img src="https://img.shields.io/pypi/v/pyorla" alt="pyorla on PyPI"></a>
-  <a href="https://pypi.org/project/pyorla/"><img src="https://img.shields.io/pypi/pyversions/pyorla" alt="pyorla Python versions"></a>
 </p>
 
 Orla is a library for building and running LLM-based agentic systems. Modern agentic applications are workflows that combine multiple LLM calls, tool invocations, and heterogeneous infrastructure. Today, developers often stitch these pieces together manually using orchestration code, LLM serving engines, and tool execution logic.
