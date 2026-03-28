@@ -35,5 +35,5 @@ jobs:
         run: |
           uv sync --all-groups
           uv run ty check
-          uv run pytest
+          uv run pytest --cov=pyorla --cov-report=term-missing
           uv build

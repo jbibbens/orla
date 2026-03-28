@@ -8,12 +8,12 @@ This document lists the maintainers of the orla project. Maintainers are respons
 
 ## getting in touch
 
-Please file a [github issue](https://github.com/harvard-cns/orla/issues) or [join our Discord community](https://discord.gg/bzKYCFewPT). 
+Please file a [GitHub issue](https://github.com/harvard-cns/orla/issues).
 Please see [SECURITY.md](SECURITY.md) for reporting security vulnerabilities
 
 ## becoming a maintainer
 
-If you're interested in becoming a maintainer, please reach out to the current maintainers through GitHub issues or[Discord](https://discord.gg/bzKYCFewPT).
+If you're interested in becoming a maintainer, please reach out to the current maintainers through GitHub issues.
 
 ## responsibilities
 
