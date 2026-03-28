@@ -327,14 +327,16 @@ func (p *OpenAIProvider) handleStreamingChat(ctx context.Context, req openai.Cha
 			CompletionTokens: completionTokens,
 		}
 		if !firstContentAt.IsZero() {
-			response.Metrics.TTFTMs = firstContentAt.Sub(start).Milliseconds()
+			ttft := firstContentAt.Sub(start).Milliseconds()
+			response.Metrics.TTFTMs = &ttft
 		}
 		if completionTokens > 0 && !firstContentAt.IsZero() && !lastContentAt.IsZero() {
 			decodeMs := lastContentAt.Sub(firstContentAt).Milliseconds()
-			response.Metrics.TPOTMs = decodeMs / int64(completionTokens)
-			if response.Metrics.TPOTMs == 0 && decodeMs > 0 {
-				response.Metrics.TPOTMs = 1
+			tpot := decodeMs / int64(completionTokens)
+			if tpot == 0 && decodeMs > 0 {
+				tpot = 1
 			}
+			response.Metrics.TPOTMs = &tpot
 		}
 	}()
 

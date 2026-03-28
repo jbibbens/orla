@@ -194,12 +194,18 @@ func runWorkflow(ctx context.Context, client *orla.OrlaClient, backend *orla.LLM
 			sm.PromptTokens = m.PromptTokens
 			sm.CompletionTokens = m.CompletionTokens
 			sm.QueueWaitMs = m.QueueWaitMs
-			sm.BackendLatencyMs = m.BackendLatencyMs
-			sm.TTFTMs = m.TTFTMs
-			sm.TPOTMs = m.TPOTMs
-			sm.DurationMs = m.BackendLatencyMs
+			if m.BackendLatencyMs != nil {
+				sm.BackendLatencyMs = *m.BackendLatencyMs
+				sm.DurationMs = *m.BackendLatencyMs
+			}
+			if m.TTFTMs != nil {
+				sm.TTFTMs = *m.TTFTMs
+			}
+			if m.TPOTMs != nil {
+				sm.TPOTMs = *m.TPOTMs
+			}
 			if sm.DurationMs == 0 {
-				sm.DurationMs = m.QueueWaitMs + m.TTFTMs
+				sm.DurationMs = m.QueueWaitMs + sm.TTFTMs
 			}
 		}
 		wfMetrics.TotalPromptTokens += sm.PromptTokens

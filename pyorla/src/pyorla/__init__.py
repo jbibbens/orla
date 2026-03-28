@@ -55,6 +55,7 @@ from pyorla.types import (
     SCHEDULING_POLICY_FCFS,
     SCHEDULING_POLICY_PRIORITY,
     CacheHints,
+    CostModel,
     ExecuteRequest,
     InferenceResponse,
     InferenceResponseMetrics,
@@ -111,6 +112,7 @@ __all__ = [
     "orla_response_to_ai_message",
     "orla_to_langchain",
     # Types
+    "CostModel",
     "LLMBackend",
     "ExecuteRequest",
     "Message",

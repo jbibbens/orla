@@ -6,6 +6,14 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class CostModel:
+    """Per-backend token pricing in USD per million tokens."""
+
+    input_cost_per_mtoken: float = 0.0
+    output_cost_per_mtoken: float = 0.0
+
+
+@dataclass
 class LLMBackend:
     """Registered LLM backend (OpenAI-compatible or SGLang)."""
 
@@ -16,12 +24,20 @@ class LLMBackend:
     api_key_env_var: str = ""
     max_concurrency: int = 1
     queue_capacity: int = 0
+    cost_model: CostModel | None = None
+    quality: float | None = None
 
     def set_max_concurrency(self, n: int) -> None:
         self.max_concurrency = n
 
     def set_queue_capacity(self, n: int) -> None:
         self.queue_capacity = n
+
+    def set_cost_model(self, cm: CostModel) -> None:
+        self.cost_model = cm
+
+    def set_quality(self, q: float) -> None:
+        self.quality = q
 
 
 @dataclass
@@ -81,6 +97,7 @@ class ExecuteRequest:
     cache_policy: str = ""
     cache_hints: CacheHints | None = None
     reasoning_effort: str = ""
+    accuracy: float | None = None
 
     def to_dict(self) -> dict:
         """Serialize to JSON-compatible dict, omitting None/empty values."""
@@ -129,6 +146,8 @@ class ExecuteRequest:
                 d["cache_hints"] = ch
         if self.reasoning_effort:
             d["reasoning_effort"] = self.reasoning_effort
+        if self.accuracy is not None:
+            d["accuracy"] = self.accuracy
         return d
 
 
@@ -147,14 +166,15 @@ def _message_to_dict(m: Message) -> dict:
 class InferenceResponseMetrics:
     """Latency and token metrics from a completed inference."""
 
-    ttft_ms: int = 0
-    tpot_ms: int = 0
+    ttft_ms: int | None = None
+    tpot_ms: int | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
     queue_wait_ms: int = 0
     scheduler_decision_ms: int = 0
     dispatch_ms: int = 0
-    backend_latency_ms: int = 0
+    backend_latency_ms: int | None = None
+    estimated_cost_usd: float | None = None
 
 
 @dataclass

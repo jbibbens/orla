@@ -3,6 +3,7 @@ package serving
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -72,6 +73,16 @@ func (m *LLMBackendManager) GetModelID(backendName string) string {
 		return entry.modelID
 	}
 	return ""
+}
+
+// GetCostModel returns the CostModel for a registered backend, or nil if not found or unset.
+func (m *LLMBackendManager) GetCostModel(backendName string) *core.CostModel {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if entry, ok := m.backends[backendName]; ok {
+		return entry.backend.CostModel
+	}
+	return nil
 }
 
 // GetModelProvider returns a cached provider for an LLM backend, creating it if necessary
@@ -213,6 +224,53 @@ func (m *LLMBackendManager) GetHealthStatus(ctx context.Context, backendName str
 	}
 
 	return HealthStatusHealthy, nil
+}
+
+// SelectBackendByAccuracy returns the cheapest registered backend whose Quality >= accuracy
+// and that has a CostModel set. Ties are broken by ascending output cost, then input cost.
+func (m *LLMBackendManager) SelectBackendByAccuracy(accuracy float64) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	type candidate struct {
+		name string
+		cm   *core.CostModel
+	}
+	var candidates []candidate
+	for name, entry := range m.backends {
+		b := entry.backend
+		if b.CostModel == nil || b.Quality < accuracy {
+			continue
+		}
+		candidates = append(candidates, candidate{name: name, cm: b.CostModel})
+	}
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no backend with quality >= %v and a cost model; registered backends: %s",
+			accuracy, m.describeBackendsLocked())
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].cm.OutputCostPerMToken != candidates[j].cm.OutputCostPerMToken {
+			return candidates[i].cm.OutputCostPerMToken < candidates[j].cm.OutputCostPerMToken
+		}
+		return candidates[i].cm.InputCostPerMToken < candidates[j].cm.InputCostPerMToken
+	})
+	return candidates[0].name, nil
+}
+
+// describeBackendsLocked returns a human-readable summary of registered backends.
+// Caller must hold at least m.mu.RLock().
+func (m *LLMBackendManager) describeBackendsLocked() string {
+	if len(m.backends) == 0 {
+		return "(none)"
+	}
+	parts := make([]string, 0, len(m.backends))
+	for name, entry := range m.backends {
+		q := entry.backend.Quality
+		hasCost := entry.backend.CostModel != nil
+		parts = append(parts, fmt.Sprintf("%s(quality=%.2f, has_cost=%v)", name, q, hasCost))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ", ")
 }
 
 // ListLLMBackends returns a list of all LLM backend names

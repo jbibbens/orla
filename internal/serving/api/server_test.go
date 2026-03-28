@@ -242,6 +242,10 @@ func TestServer_HandleRegisterBackend_Validation(t *testing.T) {
 	layer := serving.NewAgenticLayer()
 	server := NewAgenticServer(layer, ":0", nil)
 
+	negQuality := -0.5
+	overQuality := 1.5
+	goodQuality := 0.8
+
 	tests := []struct {
 		name string
 		req  RegisterBackendRequest
@@ -252,6 +256,14 @@ func TestServer_HandleRegisterBackend_Validation(t *testing.T) {
 		{"missing type", RegisterBackendRequest{Name: "v", Endpoint: "http://x", ModelID: "openai:m"}, http.StatusBadRequest},
 		{"missing model_id", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "openai"}, http.StatusBadRequest},
 		{"invalid type", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "invalid", ModelID: "openai:m"}, http.StatusBadRequest},
+		{"negative quality", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "openai", ModelID: "openai:m", Quality: &negQuality}, http.StatusBadRequest},
+		{"quality > 1", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "openai", ModelID: "openai:m", Quality: &overQuality}, http.StatusBadRequest},
+		{"negative cost rate", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "openai", ModelID: "openai:m", CostModel: &CostModelRequest{InputCostPerMToken: -1}}, http.StatusBadRequest},
+		{"valid with cost+quality", RegisterBackendRequest{
+			Name: "v", Endpoint: "http://x", Type: "openai", ModelID: "openai:m",
+			Quality:   &goodQuality,
+			CostModel: &CostModelRequest{InputCostPerMToken: 0.25, OutputCostPerMToken: 1.25},
+		}, http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -263,4 +275,104 @@ func TestServer_HandleRegisterBackend_Validation(t *testing.T) {
 			assert.Equal(t, tt.want, resp.Code)
 		})
 	}
+}
+
+func TestServer_HandleExecute_AccuracyRouting(t *testing.T) {
+	srv := model.NewMockLLMServer().ReturnContent("routed").Start()
+	t.Cleanup(srv.Close)
+	t.Setenv("ORLA_TEST_KEY", "k")
+
+	layer := serving.NewAgenticLayer()
+	layer.AddLLMBackend("expensive", &core.LLMBackend{
+		Type:     core.LLMInferenceAPITypeOpenAI,
+		Endpoint: srv.URL() + "/v1",
+		Quality:  0.9,
+		CostModel: &core.CostModel{
+			InputCostPerMToken:  5.0,
+			OutputCostPerMToken: 20.0,
+		},
+		APIKeyEnvVar: "ORLA_TEST_KEY",
+	}, "openai:big")
+	layer.AddLLMBackend("cheap", &core.LLMBackend{
+		Type:     core.LLMInferenceAPITypeOpenAI,
+		Endpoint: srv.URL() + "/v1",
+		Quality:  0.5,
+		CostModel: &core.CostModel{
+			InputCostPerMToken:  0.1,
+			OutputCostPerMToken: 0.5,
+		},
+		APIKeyEnvVar: "ORLA_TEST_KEY",
+	}, "openai:small")
+
+	server := NewAgenticServer(layer, ":0", nil)
+
+	accuracy := 0.4
+	reqBody := ExecuteRequest{
+		Prompt: "hi",
+		InferenceOptions: model.InferenceOptions{
+			Accuracy: &accuracy,
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader(body)))
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	var result ExecuteResponse
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &result))
+	assert.True(t, result.Success)
+	assert.Equal(t, "routed", result.Response.Content)
+}
+
+func TestServer_HandleExecute_AccuracyNoneQualify(t *testing.T) {
+	layer := serving.NewAgenticLayer()
+	layer.AddLLMBackend("weak", &core.LLMBackend{
+		Type:     core.LLMInferenceAPITypeOpenAI,
+		Endpoint: "http://x",
+		Quality:  0.3,
+		CostModel: &core.CostModel{
+			InputCostPerMToken:  0.1,
+			OutputCostPerMToken: 0.5,
+		},
+	}, "openai:tiny")
+
+	server := NewAgenticServer(layer, ":0", nil)
+
+	accuracy := 0.9
+	reqBody := ExecuteRequest{
+		Backend: "weak",
+		Prompt:  "hi",
+		InferenceOptions: model.InferenceOptions{
+			Accuracy: &accuracy,
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader(body)))
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "no backend with quality")
+}
+
+func TestServer_HandleExecute_AccuracyOutOfRange(t *testing.T) {
+	layer := serving.NewAgenticLayer()
+	server := NewAgenticServer(layer, ":0", nil)
+
+	accuracy := 1.5
+	reqBody := ExecuteRequest{
+		Backend: "x",
+		Prompt:  "hi",
+		InferenceOptions: model.InferenceOptions{
+			Accuracy: &accuracy,
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader(body)))
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "accuracy must be in [0.0, 1.0]")
 }

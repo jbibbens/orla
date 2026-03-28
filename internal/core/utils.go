@@ -11,8 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// IntPtr returns a pointer to n. Useful when we want to quickly convert a literal int to a pointer.
-func IntPtr(n int) *int { return &n }
+// Ptr returns a pointer to v. Useful for converting literals to pointers in struct initializers.
+func Ptr[T any](v T) *T { return &v }
 
 // JoinMapKeys joins the keys of a map into a comma-separated string.
 // Useful for error messages that need to list valid values.

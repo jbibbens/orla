@@ -13,6 +13,12 @@ const (
 	LLMInferenceAPITypeSGLang LLMInferenceAPIType = "sglang"
 )
 
+// CostModel holds per-backend token pricing in USD per million tokens.
+type CostModel struct {
+	InputCostPerMToken  float64 `yaml:"input_cost_per_mtoken,omitempty" mapstructure:"input_cost_per_mtoken"`
+	OutputCostPerMToken float64 `yaml:"output_cost_per_mtoken,omitempty" mapstructure:"output_cost_per_mtoken"`
+}
+
 // LLMBackend represents an LLM inference server. This allows configuring
 // remote Ollama servers, OpenAI-compatible APIs, and other LLM inference servers.
 type LLMBackend struct {
@@ -31,4 +37,9 @@ type LLMBackend struct {
 	// QueueCapacity is the maximum number of requests that may be queued for this backend.
 	// When the queue is full, ScheduleChat returns an error. A value of 0 means use the default (4096).
 	QueueCapacity int `yaml:"queue_capacity,omitempty" mapstructure:"queue_capacity"`
+	// CostModel holds optional token pricing for cost estimation and accuracy-based routing.
+	CostModel *CostModel `yaml:"cost_model,omitempty" mapstructure:"cost_model"`
+	// Quality is a relative capability score in [0.0, 1.0] used for accuracy-based routing.
+	// 0 means unscored (backend will not participate in accuracy-based selection).
+	Quality float64 `yaml:"quality,omitempty" mapstructure:"quality"`
 }

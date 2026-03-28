@@ -70,11 +70,6 @@ def test_parse_execute_response_metrics_dict() -> None:
     r = _parse_execute_response(data)
     assert r.metrics == InferenceResponseMetrics(
         ttft_ms=12,
-        tpot_ms=0,
         prompt_tokens=3,
         completion_tokens=1,
-        queue_wait_ms=0,
-        scheduler_decision_ms=0,
-        dispatch_ms=0,
-        backend_latency_ms=0,
     )

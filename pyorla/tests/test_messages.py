@@ -66,6 +66,7 @@ def test_orla_response_to_ai_message():
     ai = orla_response_to_ai_message(resp)
     assert ai.content == "Hello world"
     assert ai.response_metadata["ttft_ms"] == 50
+    assert ai.response_metadata["prompt_tokens"] == 10
 
 
 def test_orla_response_to_ai_message_with_tool_calls():

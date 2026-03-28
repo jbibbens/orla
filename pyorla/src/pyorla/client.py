@@ -232,6 +232,13 @@ def _backend_to_dict(b: LLMBackend) -> dict[str, Any]:
         d["max_concurrency"] = b.max_concurrency
     if b.queue_capacity > 0:
         d["queue_capacity"] = b.queue_capacity
+    if b.cost_model is not None:
+        d["cost_model"] = {
+            "input_cost_per_mtoken": b.cost_model.input_cost_per_mtoken,
+            "output_cost_per_mtoken": b.cost_model.output_cost_per_mtoken,
+        }
+    if b.quality is not None:
+        d["quality"] = b.quality
     return d
 
 
@@ -243,14 +250,15 @@ def _parse_execute_response(data: dict) -> InferenceResponse:
     m = r.get("metrics")
     if isinstance(m, dict):
         metrics = InferenceResponseMetrics(
-            ttft_ms=m.get("ttft_ms", 0),
-            tpot_ms=m.get("tpot_ms", 0),
+            ttft_ms=m.get("ttft_ms"),
+            tpot_ms=m.get("tpot_ms"),
             prompt_tokens=m.get("prompt_tokens", 0),
             completion_tokens=m.get("completion_tokens", 0),
             queue_wait_ms=m.get("queue_wait_ms", 0),
             scheduler_decision_ms=m.get("scheduler_decision_ms", 0),
             dispatch_ms=m.get("dispatch_ms", 0),
-            backend_latency_ms=m.get("backend_latency_ms", 0),
+            backend_latency_ms=m.get("backend_latency_ms"),
+            estimated_cost_usd=m.get("estimated_cost_usd"),
         )
     tool_calls = r.get("tool_calls") or []
     return InferenceResponse(

@@ -177,6 +177,15 @@ components:
           type: string
         cache_policy:
           type: string
+        accuracy:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: >
+            Requests cost-optimized backend selection. When set, the daemon picks
+            the cheapest backend whose quality >= this value.
 
     Message:
       type: object
@@ -241,8 +250,12 @@ components:
       properties:
         ttft_ms:
           type: integer
+          nullable: true
+          description: Time to first token (ms). Streaming only; null for non-streaming.
         tpot_ms:
           type: integer
+          nullable: true
+          description: Time per output token (ms). Streaming only; null for non-streaming.
         prompt_tokens:
           type: integer
         completion_tokens:
@@ -255,6 +268,27 @@ components:
           type: integer
         backend_latency_ms:
           type: integer
+          nullable: true
+          description: End-to-end backend latency (ms). Non-streaming only; null for streaming.
+        estimated_cost_usd:
+          type: number
+          format: double
+          nullable: true
+          description: >
+            Estimated cost in USD based on token counts and the backend's cost model.
+            Null when the backend has no cost model configured.
+
+    CostModel:
+      type: object
+      properties:
+        input_cost_per_mtoken:
+          type: number
+          format: double
+          description: USD per million input tokens
+        output_cost_per_mtoken:
+          type: number
+          format: double
+          description: USD per million output tokens
 
     RegisterBackendRequest:
       type: object
@@ -281,6 +315,14 @@ components:
         queue_capacity:
           type: integer
           default: 4096
+        cost_model:
+          $ref: "#/components/schemas/CostModel"
+        quality:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Relative capability score in [0.0, 1.0] for accuracy-based routing
 
     RegisterBackendResponse:
       type: object

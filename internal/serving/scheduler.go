@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/harvard-cns/orla/internal/model"
+	"github.com/harvard-cns/orla/internal/serving/cost"
 	"github.com/harvard-cns/orla/internal/serving/memory"
 	"github.com/harvard-cns/orla/internal/serving/metrics"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -198,7 +199,14 @@ func (e *backendExecutor) worker() {
 			response.Metrics.QueueWaitMs = queueWaitMs
 			response.Metrics.SchedulerDecisionMs = schedulerDecisionMs
 			response.Metrics.DispatchMs = dispatchMs
-			response.Metrics.BackendLatencyMs = dispatchMs
+			response.Metrics.BackendLatencyMs = &dispatchMs
+			estCost, err := cost.EstimatedCostUSD(
+				response.Metrics.PromptTokens, response.Metrics.CompletionTokens,
+				e.manager.GetCostModel(req.backend))
+			if err != nil {
+				zap.L().Warn("cost estimation failed", zap.String("backend", req.backend), zap.Error(err))
+			}
+			response.Metrics.EstimatedCostUSD = estCost
 		}
 
 		// For streaming requests, proxy the channel through a wrapper so we
@@ -242,6 +250,13 @@ func (e *backendExecutor) worker() {
 			response.Metrics.QueueWaitMs = queueWaitMs
 			response.Metrics.SchedulerDecisionMs = schedulerDecisionMs
 			response.Metrics.DispatchMs = dispatchMs
+			estCost, costErr := cost.EstimatedCostUSD(
+				response.Metrics.PromptTokens, response.Metrics.CompletionTokens,
+				e.manager.GetCostModel(req.backend))
+			if costErr != nil {
+				zap.L().Warn("cost estimation failed", zap.String("backend", req.backend), zap.Error(costErr))
+			}
+			response.Metrics.EstimatedCostUSD = estCost
 			if e.memoryManager != nil && req.workflowID != "" {
 				e.memoryManager.ClearInflight(req.backend, requestID)
 				e.memoryManager.OnTransition(req.ctx, memory.StageTransition{

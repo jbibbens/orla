@@ -47,23 +47,30 @@ type ToolCallWithID struct {
 	McpCallToolParams mcp.CallToolParams
 }
 
+// ResponseMetrics holds latency, token, and cost data for an inference call.
+//
+// Pointer fields are mode-specific or depend on optional configuration — nil means
+// "not applicable" or "not available", which is distinct from a measured zero.
+// Bare-value fields are always populated by the scheduler or backend in every mode.
 type ResponseMetrics struct {
-	// TTFTMs is time to first token in milliseconds. Only set when task was executed with streaming.
-	TTFTMs int64 `json:"ttft_ms,omitempty"`
-	// TPOTMs is time per output token in milliseconds. Only set when task was executed with streaming.
-	TPOTMs int64 `json:"tpot_ms,omitempty"`
-	// PromptTokens is the number of tokens in the prompt (input). Reported by the backend.
-	PromptTokens int `json:"prompt_tokens,omitempty"`
-	// CompletionTokens is the number of tokens generated (output). Reported by the backend.
+	// Streaming-only. Nil for non-streaming requests.
+	TTFTMs *int64 `json:"ttft_ms,omitempty"`
+	TPOTMs *int64 `json:"tpot_ms,omitempty"`
+
+	// Reported by the backend in both modes.
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
-	// QueueWaitMs is the time spent waiting in Orla's backend scheduler queue.
-	QueueWaitMs int64 `json:"queue_wait_ms,omitempty"`
-	// SchedulerDecisionMs is the time spent selecting the next request in the scheduler.
+
+	// Always populated by the scheduler.
+	QueueWaitMs         int64 `json:"queue_wait_ms,omitempty"`
 	SchedulerDecisionMs int64 `json:"scheduler_decision_ms,omitempty"`
-	// DispatchMs is the request dispatch/setup time between scheduler dequeue and provider return.
-	DispatchMs int64 `json:"dispatch_ms,omitempty"`
-	// BackendLatencyMs is end-to-end backend latency for non-streaming calls.
-	BackendLatencyMs int64 `json:"backend_latency_ms,omitempty"`
+	DispatchMs          int64 `json:"dispatch_ms,omitempty"`
+
+	// Non-streaming only. Nil for streaming requests.
+	BackendLatencyMs *int64 `json:"backend_latency_ms,omitempty"`
+
+	// Nil when the backend has no CostModel configured.
+	EstimatedCostUSD *float64 `json:"estimated_cost_usd,omitempty"`
 }
 
 // SchedulingPolicy controls how the server picks the next stage queue on a backend.
@@ -138,6 +145,9 @@ type InferenceOptions struct {
 	SchedulingHints *SchedulingHints `json:"scheduling_hints,omitempty"`
 	// ReasoningEffort controls thinking for reasoning-capable models ("high", "medium", "low", "none").
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// Accuracy requests cost-optimized backend selection. When set to a value in [0.0, 1.0],
+	// the daemon picks the cheapest backend whose Quality >= this value.
+	Accuracy *float64 `json:"accuracy,omitempty"`
 }
 
 // GetSchedulingPolicy returns the configured scheduling policy or the FCFS default.

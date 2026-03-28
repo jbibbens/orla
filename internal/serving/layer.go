@@ -80,6 +80,11 @@ func (l *AgenticLayer) ListLLMBackends() []string {
 	return l.llmBackendManager.ListLLMBackends()
 }
 
+// SelectBackendByAccuracy picks the cheapest backend whose Quality >= accuracy.
+func (l *AgenticLayer) SelectBackendByAccuracy(accuracy float64) (string, error) {
+	return l.llmBackendManager.SelectBackendByAccuracy(accuracy)
+}
+
 // NotifyWorkflowComplete emits TransitionWorkflowComplete signals for each
 // backend the workflow used, then deregisters the workflow from the tracker.
 func (l *AgenticLayer) NotifyWorkflowComplete(ctx context.Context, workflowID string, backends []string) {

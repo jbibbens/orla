@@ -171,6 +171,20 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Accuracy != nil {
+		a := *req.Accuracy
+		if a < 0 || a > 1 {
+			http.Error(w, fmt.Sprintf("accuracy must be in [0.0, 1.0]; got %v", a), http.StatusBadRequest)
+			return
+		}
+		selected, err := s.layer.SelectBackendByAccuracy(a)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		req.Backend = selected
+	}
+
 	if req.Backend == "" {
 		http.Error(w, "backend is required", http.StatusBadRequest)
 		return
@@ -274,15 +288,23 @@ func (s *AgenticServer) handleExecuteStream(w http.ResponseWriter, ctx context.C
 	})
 }
 
+// CostModelRequest is the JSON shape for per-backend token pricing.
+type CostModelRequest struct {
+	InputCostPerMToken  float64 `json:"input_cost_per_mtoken"`
+	OutputCostPerMToken float64 `json:"output_cost_per_mtoken"`
+}
+
 // RegisterBackendRequest is the request body for registering an LLM backend.
 type RegisterBackendRequest struct {
-	Name           string `json:"name"`                      // backend name (used as "backend" in execute requests)
-	Endpoint       string `json:"endpoint"`                  // e.g. "http://vllm:8000/v1", "http://localhost:11434"
-	Type           string `json:"type"`                      // "openai" or "sglang"
-	ModelID        string `json:"model_id"`                  // full model identifier e.g. "openai:Qwen/Qwen3-4B-Instruct-2507", "openai:llama3"
-	APIKeyEnvVar   string `json:"api_key_env_var,omitempty"` // optional env var name for API key (for openai-type backends)
-	MaxConcurrency int    `json:"max_concurrency,omitempty"` // max concurrent requests to this backend (default 1)
-	QueueCapacity  int    `json:"queue_capacity,omitempty"`  // max queued requests; 0 = default (4096)
+	Name           string            `json:"name"`                      // backend name (used as "backend" in execute requests)
+	Endpoint       string            `json:"endpoint"`                  // e.g. "http://vllm:8000/v1", "http://localhost:11434"
+	Type           string            `json:"type"`                      // "openai" or "sglang"
+	ModelID        string            `json:"model_id"`                  // full model identifier e.g. "openai:Qwen/Qwen3-4B-Instruct-2507", "openai:llama3"
+	APIKeyEnvVar   string            `json:"api_key_env_var,omitempty"` // optional env var name for API key (for openai-type backends)
+	MaxConcurrency int               `json:"max_concurrency,omitempty"` // max concurrent requests to this backend (default 1)
+	QueueCapacity  int               `json:"queue_capacity,omitempty"`  // max queued requests; 0 = default (4096)
+	CostModel      *CostModelRequest `json:"cost_model,omitempty"`      // optional token pricing
+	Quality        *float64          `json:"quality,omitempty"`         // relative capability score in [0.0, 1.0]
 }
 
 // RegisterBackendResponse is the response body for register backend.
@@ -330,12 +352,30 @@ func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if req.Quality != nil && (*req.Quality < 0 || *req.Quality > 1) {
+		http.Error(w, fmt.Sprintf("quality must be in [0.0, 1.0]; got %v", *req.Quality), http.StatusBadRequest)
+		return
+	}
+	if req.CostModel != nil && (req.CostModel.InputCostPerMToken < 0 || req.CostModel.OutputCostPerMToken < 0) {
+		http.Error(w, "cost_model rates must be non-negative", http.StatusBadRequest)
+		return
+	}
+
 	backend := &core.LLMBackend{
 		Endpoint:       req.Endpoint,
 		Type:           backendType,
 		APIKeyEnvVar:   req.APIKeyEnvVar,
 		MaxConcurrency: req.MaxConcurrency,
 		QueueCapacity:  req.QueueCapacity,
+	}
+	if req.CostModel != nil {
+		backend.CostModel = &core.CostModel{
+			InputCostPerMToken:  req.CostModel.InputCostPerMToken,
+			OutputCostPerMToken: req.CostModel.OutputCostPerMToken,
+		}
+	}
+	if req.Quality != nil {
+		backend.Quality = *req.Quality
 	}
 	s.layer.AddLLMBackend(req.Name, backend, req.ModelID)
 
@@ -344,7 +384,8 @@ func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Req
 		zap.String("endpoint", req.Endpoint),
 		zap.String("model_id", req.ModelID),
 		zap.Int("max_concurrency", req.MaxConcurrency),
-		zap.Int("queue_capacity", req.QueueCapacity))
+		zap.Int("queue_capacity", req.QueueCapacity),
+		zap.Float64("quality", backend.Quality))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

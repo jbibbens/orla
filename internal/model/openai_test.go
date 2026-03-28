@@ -299,7 +299,7 @@ func TestOpenAIProvider_Chat_WithMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, p.EnsureReady(context.Background()))
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, InferenceOptions{Stream: false, MaxTokens: core.IntPtr(maxTokens)})
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, InferenceOptions{Stream: false, MaxTokens: core.Ptr(maxTokens)})
 	require.NoError(t, err)
 	require.Nil(t, ch)
 	require.NotNil(t, resp)
@@ -352,7 +352,7 @@ func TestOpenAIProvider_Chat_WithMaxTokensZero(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, p.EnsureReady(context.Background()))
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, InferenceOptions{Stream: false, MaxTokens: core.IntPtr(maxTokens)})
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, InferenceOptions{Stream: false, MaxTokens: &maxTokens})
 	require.NoError(t, err)
 	require.Nil(t, ch)
 	require.NotNil(t, resp)

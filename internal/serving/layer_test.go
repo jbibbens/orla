@@ -42,7 +42,7 @@ func TestLayer_Execute_WithMaxTokens(t *testing.T) {
 
 	response, err := layer.Execute(context.Background(), "test-server", "test", []model.Message{
 		{Role: model.MessageRoleUser, Content: "test prompt"},
-	}, nil, model.InferenceOptions{MaxTokens: core.IntPtr(42)})
+	}, nil, model.InferenceOptions{MaxTokens: core.Ptr(42)})
 	require.NoError(t, err)
 	assert.Equal(t, "test response", response.Content)
 
@@ -114,7 +114,7 @@ func TestLayer_ExecuteStream(t *testing.T) {
 
 	response, ch, err := layer.ExecuteStream(context.Background(), "test-server", "test", []model.Message{
 		{Role: model.MessageRoleUser, Content: "test"},
-	}, nil, model.InferenceOptions{Stream: true, MaxTokens: core.IntPtr(10)})
+	}, nil, model.InferenceOptions{Stream: true, MaxTokens: core.Ptr(10)})
 	require.NoError(t, err)
 	require.NotNil(t, ch)
 	for range ch {

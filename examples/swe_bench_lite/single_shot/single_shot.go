@@ -273,9 +273,15 @@ func submitJob(ctx context.Context, j instanceJob, enc *shared.PredictionEncoder
 			inst.QueueWaitMs = resp.Metrics.QueueWaitMs
 			inst.SchedulerDecisionMs = resp.Metrics.SchedulerDecisionMs
 			inst.DispatchMs = resp.Metrics.DispatchMs
-			inst.BackendLatencyMs = resp.Metrics.BackendLatencyMs
-			inst.TTFTMs = resp.Metrics.TTFTMs
-			inst.TPOTMs = resp.Metrics.TPOTMs
+			if resp.Metrics.BackendLatencyMs != nil {
+				inst.BackendLatencyMs = *resp.Metrics.BackendLatencyMs
+			}
+			if resp.Metrics.TTFTMs != nil {
+				inst.TTFTMs = *resp.Metrics.TTFTMs
+			}
+			if resp.Metrics.TPOTMs != nil {
+				inst.TPOTMs = *resp.Metrics.TPOTMs
+			}
 		}
 	}
 

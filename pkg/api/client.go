@@ -192,15 +192,17 @@ type InferenceResponse struct {
 }
 
 // InferenceResponseMetrics holds timing and token usage metrics from execution.
+// Pointer fields are mode-specific: nil means "not applicable for this request type".
 type InferenceResponseMetrics struct {
-	TTFTMs              int64 `json:"ttft_ms,omitempty"`
-	TPOTMs              int64 `json:"tpot_ms,omitempty"`
-	PromptTokens        int   `json:"prompt_tokens,omitempty"`
-	CompletionTokens    int   `json:"completion_tokens,omitempty"`
-	QueueWaitMs         int64 `json:"queue_wait_ms,omitempty"`
-	SchedulerDecisionMs int64 `json:"scheduler_decision_ms,omitempty"`
-	DispatchMs          int64 `json:"dispatch_ms,omitempty"`
-	BackendLatencyMs    int64 `json:"backend_latency_ms,omitempty"`
+	TTFTMs           *int64 `json:"ttft_ms,omitempty"`
+	TPOTMs           *int64 `json:"tpot_ms,omitempty"`
+	PromptTokens     int    `json:"prompt_tokens,omitempty"`
+	CompletionTokens int    `json:"completion_tokens,omitempty"`
+	QueueWaitMs      int64  `json:"queue_wait_ms,omitempty"`
+	SchedulerDecisionMs int64  `json:"scheduler_decision_ms,omitempty"`
+	DispatchMs          int64  `json:"dispatch_ms,omitempty"`
+	BackendLatencyMs    *int64 `json:"backend_latency_ms,omitempty"`
+	EstimatedCostUSD    *float64 `json:"estimated_cost_usd,omitempty"`
 }
 
 // StreamEvent is a single event from ExecuteStream. Exactly one of Content, Thinking, ToolCall, or Response is set, depending on Type.

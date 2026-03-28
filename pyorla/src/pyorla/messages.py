@@ -115,14 +115,18 @@ def orla_response_to_ai_message(resp: InferenceResponse) -> AIMessage:
 
     kwargs: dict[str, Any] = {}
     if resp.metrics:
-        kwargs["response_metadata"] = {
-            "ttft_ms": resp.metrics.ttft_ms,
-            "tpot_ms": resp.metrics.tpot_ms,
+        meta: dict[str, Any] = {
             "prompt_tokens": resp.metrics.prompt_tokens,
             "completion_tokens": resp.metrics.completion_tokens,
             "queue_wait_ms": resp.metrics.queue_wait_ms,
-            "backend_latency_ms": resp.metrics.backend_latency_ms,
         }
+        if resp.metrics.ttft_ms is not None:
+            meta["ttft_ms"] = resp.metrics.ttft_ms
+        if resp.metrics.tpot_ms is not None:
+            meta["tpot_ms"] = resp.metrics.tpot_ms
+        if resp.metrics.backend_latency_ms is not None:
+            meta["backend_latency_ms"] = resp.metrics.backend_latency_ms
+        kwargs["response_metadata"] = meta
 
     return AIMessage(
         content=resp.content,
