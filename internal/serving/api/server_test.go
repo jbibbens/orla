@@ -14,6 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// test env var names, not credentials. //nolint:gosec // G101
+const (
+	testAPIKeyEnvVar  = "ORLA_TEST_OPENAI_KEY" //nolint:gosec // G101 - env var name, not a credential
+	testAPIKeyEnvVar2 = "ORLA_TEST_KEY"        //nolint:gosec // G101 - env var name, not a credential
+)
+
 func TestServer_HandleExecute_RequestBodyTooLarge(t *testing.T) {
 	layer := serving.NewAgenticLayer()
 	server := NewAgenticServer(layer, ":0", nil)
@@ -62,13 +68,13 @@ func TestServer_HandleHealth(t *testing.T) {
 func TestServer_HandleMetrics(t *testing.T) {
 	srv := model.NewMockLLMServer().ReturnContent("ok").Start()
 	t.Cleanup(srv.Close)
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 
 	layer := serving.NewAgenticLayer()
 	layer.AddLLMBackend("metrics-backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:test-model")
 	server := NewAgenticServer(layer, ":0", nil)
 
@@ -280,7 +286,7 @@ func TestServer_HandleRegisterBackend_Validation(t *testing.T) {
 func TestServer_HandleExecute_AccuracyRouting(t *testing.T) {
 	srv := model.NewMockLLMServer().ReturnContent("routed").Start()
 	t.Cleanup(srv.Close)
-	t.Setenv("ORLA_TEST_KEY", "k")
+	t.Setenv(testAPIKeyEnvVar2, "k")
 
 	layer := serving.NewAgenticLayer()
 	layer.AddLLMBackend("expensive", &core.LLMBackend{
@@ -291,7 +297,7 @@ func TestServer_HandleExecute_AccuracyRouting(t *testing.T) {
 			InputCostPerMToken:  5.0,
 			OutputCostPerMToken: 20.0,
 		},
-		APIKeyEnvVar: "ORLA_TEST_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar2,
 	}, "openai:big")
 	layer.AddLLMBackend("cheap", &core.LLMBackend{
 		Type:     core.LLMInferenceAPITypeOpenAI,
@@ -301,7 +307,7 @@ func TestServer_HandleExecute_AccuracyRouting(t *testing.T) {
 			InputCostPerMToken:  0.1,
 			OutputCostPerMToken: 0.5,
 		},
-		APIKeyEnvVar: "ORLA_TEST_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar2,
 	}, "openai:small")
 
 	server := NewAgenticServer(layer, ":0", nil)

@@ -21,9 +21,8 @@ linters:
     staticcheck:
       checks: ["all"]
     gosec:
-      # Exclude G204 (subprocess launched with variable) - we intentionally use variables for tool paths
       excludes:
-        - G204
+        - G204  # subprocess launched with variable - intentional for tool paths
     goconst:
       min-len: 3
       min-occurrences: 3

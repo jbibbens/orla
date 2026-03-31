@@ -100,7 +100,7 @@ func TestSelectNextStageKey_PriorityTieBreaksByOldestHead(t *testing.T) {
 
 // --- selectNextRequest tests ---
 
-func TestSelectNextRequest_FIFODefault(t *testing.T) {
+func TestSelectNextRequest_FCFSDefault(t *testing.T) {
 	now := time.Now()
 	queue := []*scheduledRequest{
 		{enqueuedAt: now.Add(-2 * time.Second), opts: model.InferenceOptions{}},

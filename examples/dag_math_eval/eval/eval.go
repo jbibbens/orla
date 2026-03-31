@@ -38,7 +38,7 @@ func Run(ctx context.Context, dataset *shared.DAGMathDataset, mode string) error
 		modelID = defaultModelID
 	}
 
-	log.Printf("Using model %s (override with SGLANG_MODEL)", modelID)
+	log.Printf("Using model %s (override with SGLANG_MODEL)", modelID) //nolint:gosec // G706 - modelID is from env or hardcoded default
 	backend := orla.NewSGLangBackend(modelID, sglangURL)
 	backend.SetMaxConcurrency(1)
 	if err := client.RegisterBackend(ctx, backend); err != nil {

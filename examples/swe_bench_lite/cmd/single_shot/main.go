@@ -17,7 +17,7 @@ func main() {
 	if mode == "" {
 		mode = "baseline"
 	}
-	log.Printf("Starting single-shot SWE-bench experiment (mode=%s)", mode)
+	log.Printf("Starting single-shot SWE-bench experiment (mode=%s)", mode) //nolint:gosec // G706 - mode is from a controlled enum
 
 	dataset, err := shared.LoadDataset()
 	if err != nil {

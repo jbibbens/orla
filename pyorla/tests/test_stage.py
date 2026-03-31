@@ -29,7 +29,7 @@ def test_stage_setters():
     s.set_top_p(0.95)
     s.set_reasoning_effort("high")
     s.set_scheduling_policy("priority")
-    s.set_request_scheduling_policy("fifo")
+    s.set_request_scheduling_policy("fcfs")
     s.set_scheduling_hints(SchedulingHints(priority=5))
     s.set_cache_policy("preserve")
     s.set_cache_hints(CacheHints(preserve_threshold_tokens=128))
@@ -44,7 +44,7 @@ def test_stage_setters():
     assert s.top_p == 0.95
     assert s.reasoning_effort == "high"
     assert s.stage_scheduling_policy == "priority"
-    assert s.request_scheduling_policy == "fifo"
+    assert s.request_scheduling_policy == "fcfs"
     assert s.scheduling_hints is not None
     assert s.scheduling_hints.priority == 5
     assert s.cache_policy == "preserve"

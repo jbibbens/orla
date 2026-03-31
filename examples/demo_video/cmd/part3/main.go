@@ -22,7 +22,7 @@ func main() {
 
 	ticket := workflowdemo.SampleTicket
 	if path := os.Getenv("TICKET_PATH"); path != "" {
-		data, err := os.ReadFile(path) // #nosec G304 -- path from TICKET_PATH env, user-controlled for demo
+		data, err := os.ReadFile(path) //nolint:gosec // G703,G304 - path from TICKET_PATH env, user-controlled for demo
 		if err != nil {
 			log.Fatalf("read ticket: %v", err)
 		}

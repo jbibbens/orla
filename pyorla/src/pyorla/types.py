@@ -204,7 +204,7 @@ class StreamEvent:
 # Scheduling policy constants
 SCHEDULING_POLICY_FCFS = "fcfs"
 SCHEDULING_POLICY_PRIORITY = "priority"
-REQUEST_SCHEDULING_POLICY_FIFO = "fifo"
+REQUEST_SCHEDULING_POLICY_FCFS = "fcfs"
 REQUEST_SCHEDULING_POLICY_PRIORITY = "priority"
 
 # Cache policy constants

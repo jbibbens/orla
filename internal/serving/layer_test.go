@@ -32,12 +32,12 @@ func TestLayer_Execute_WithMaxTokens(t *testing.T) {
 	srv := model.NewMockLLMServer().ReturnContent("test response").Start()
 	t.Cleanup(srv.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("test-server", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:test-model")
 
 	response, err := layer.Execute(context.Background(), "test-server", "test", []model.Message{
@@ -55,12 +55,12 @@ func TestLayer_Execute_WithoutMaxTokens(t *testing.T) {
 	srv := model.NewMockLLMServer().ReturnContent("test response").Start()
 	t.Cleanup(srv.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("test-server", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:test-model")
 
 	response, err := layer.Execute(context.Background(), "test-server", "test", []model.Message{
@@ -85,12 +85,12 @@ func TestLayer_Execute_RejectsStream(t *testing.T) {
 	srv := model.NewMockLLMServer().ReturnContent("ignored").Start()
 	t.Cleanup(srv.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("test-server", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:test-model")
 
 	_, err := layer.Execute(context.Background(), "test-server", "test", []model.Message{
@@ -104,12 +104,12 @@ func TestLayer_ExecuteStream(t *testing.T) {
 	srv := model.NewMockLLMServer().ReturnStreamChunks([]string{"test ", "response"}).Start()
 	t.Cleanup(srv.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("test-server", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:test-model")
 
 	response, ch, err := layer.ExecuteStream(context.Background(), "test-server", "test", []model.Message{

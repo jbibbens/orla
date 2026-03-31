@@ -69,7 +69,7 @@ func (r *RunResultsRecorder) writeLocked(path string) error {
 	if err != nil {
 		return fmt.Errorf("marshal results: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil { //nolint:gosec // G703 - path from caller, example code
 		return fmt.Errorf("write results: %w", err)
 	}
 	return nil

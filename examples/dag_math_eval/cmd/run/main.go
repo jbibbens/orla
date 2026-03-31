@@ -16,7 +16,7 @@ func main() {
 	if mode == "" {
 		mode = eval.ModeFlushPerWorkflow
 	}
-	log.Printf("Starting DAG-Math memory evaluation (mode=%s)", mode)
+	log.Printf("Starting DAG-Math memory evaluation (mode=%s)", mode) //nolint:gosec // G706 - mode is from a controlled enum, not user input
 
 	dataset, err := shared.LoadDataset()
 	if err != nil {

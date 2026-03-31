@@ -126,7 +126,7 @@ func (r *RunMetricsRecorder) writeLocked(path string) error {
 	if err != nil {
 		return fmt.Errorf("marshal metrics: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil { //nolint:gosec // G703 - path from caller, example code
 		return fmt.Errorf("write metrics: %w", err)
 	}
 	return nil

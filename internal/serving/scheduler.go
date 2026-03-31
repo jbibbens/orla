@@ -301,7 +301,7 @@ func (e *backendExecutor) dequeue() (*scheduledRequest, int64, bool) {
 
 // selectNextRequest returns the index of the next request to dequeue from a stage queue.
 // If the head request's RequestSchedulingPolicy is "priority", picks the highest-priority
-// request in the queue (tie-breaking by oldest enqueue time). Otherwise FIFO (index 0).
+// request in the queue (tie-breaking by oldest enqueue time). Otherwise FCFS (index 0).
 func selectNextRequest(queue []*scheduledRequest) int {
 	if len(queue) <= 1 {
 		return 0
@@ -323,7 +323,7 @@ func selectNextRequest(queue []*scheduledRequest) int {
 }
 
 func selectNextStageKey(stageQueues map[string][]*scheduledRequest, policy model.SchedulingPolicy) string {
-	// Stage-level scheduling only: requests are always FIFO within each stage queue.
+	// Stage-level scheduling only: requests are always FCFS within each stage queue.
 	// Between stages, apply the backend policy:
 	// 1) priority     -> highest priority head request (tie: older request first), or
 	// 2) fcfs/default    -> oldest head request across stages.

@@ -224,7 +224,7 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch opts.RequestSchedulingPolicy {
-	case "", model.RequestSchedulingPolicyFIFO, model.RequestSchedulingPolicyPriority:
+	case "", model.RequestSchedulingPolicyFCFS, model.RequestSchedulingPolicyPriority:
 		// supported
 	default:
 		http.Error(w, fmt.Sprintf("unsupported request scheduling policy %q", opts.RequestSchedulingPolicy), http.StatusBadRequest)

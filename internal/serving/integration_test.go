@@ -11,6 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// test env var name, not a credential. //nolint:gosec // G101
+const testAPIKeyEnvVar = "ORLA_TEST_OPENAI_KEY" //nolint:gosec // G101 - env var name, not a credential
+
 // Integration tests use MockLLMServer for end-to-end flows without external services.
 // Run with: make test-integration
 
@@ -20,12 +23,12 @@ func TestIntegration_Execute_EndToEnd(t *testing.T) {
 		Start()
 	t.Cleanup(srv.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:test-model")
 
 	ctx := context.Background()
@@ -43,12 +46,12 @@ func TestIntegration_ExecuteStream_EndToEnd(t *testing.T) {
 		Start()
 	t.Cleanup(srv.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:test-model")
 
 	ctx := context.Background()
@@ -76,12 +79,12 @@ func TestIntegration_Execute_WithToolCalls(t *testing.T) {
 		Start()
 	t.Cleanup(srv.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:test-model")
 
 	ctx := context.Background()
@@ -111,17 +114,17 @@ func TestIntegration_Execute_MultipleBackends(t *testing.T) {
 	srv2 := model.NewMockLLMServer().ReturnContent("from-backend-2").Start()
 	t.Cleanup(srv2.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	t.Setenv(testAPIKeyEnvVar, "test-key")
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("backend-1", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv1.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:model-a")
 	layer.AddLLMBackend("backend-2", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv2.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:model-b")
 
 	ctx := context.Background()
@@ -147,12 +150,12 @@ func TestIntegration_Execute_InvalidAPIKey(t *testing.T) {
 	srv := model.NewMockLLMServer().ReturnContent("ok").Start()
 	t.Cleanup(srv.Close)
 
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "") // Explicitly empty so provider fails
+	t.Setenv(testAPIKeyEnvVar, "") // Explicitly empty so provider fails
 	layer := NewAgenticLayer()
 	layer.AddLLMBackend("backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
-		APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:model")
 
 	ctx := context.Background()

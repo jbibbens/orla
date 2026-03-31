@@ -87,8 +87,8 @@ const (
 type RequestSchedulingPolicy string
 
 const (
-	// RequestSchedulingPolicyFIFO processes requests in arrival order (default).
-	RequestSchedulingPolicyFIFO RequestSchedulingPolicy = "fifo"
+	// RequestSchedulingPolicyFCFS processes requests in arrival order (default).
+	RequestSchedulingPolicyFCFS RequestSchedulingPolicy = "fcfs"
 	// RequestSchedulingPolicyPriority processes the highest-priority request first.
 	RequestSchedulingPolicyPriority RequestSchedulingPolicy = "priority"
 )

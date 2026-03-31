@@ -202,7 +202,7 @@ components:
           enum: [fcfs, priority]
         request_scheduling_policy:
           type: string
-          enum: [fifo, priority]
+          enum: [fcfs, priority]
         scheduling_hints:
           type: object
           properties:

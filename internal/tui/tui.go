@@ -120,7 +120,7 @@ func New() *UI {
 	if colorEnabled && stdoutIsTTY {
 		// Get terminal width, default to 80
 		width := 80
-		if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+		if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil { //nolint:gosec // G115 - standard Go pattern for term.GetSize
 			width = w
 		}
 
@@ -138,7 +138,7 @@ func New() *UI {
 
 // IsTerminal checks if a file descriptor is connected to a terminal
 func IsTerminal(f *os.File) bool {
-	return term.IsTerminal(int(f.Fd()))
+	return term.IsTerminal(int(f.Fd())) //nolint:gosec // G115 - standard Go pattern for term.IsTerminal
 }
 
 // isDisabled checks if UI is explicitly disabled via environment variables
