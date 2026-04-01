@@ -1,6 +1,6 @@
 [project]
 name = "pyorla"
-version = "1.0.1"
+version = "1.0.3"
 description = "Python SDK for Orla"
 readme = "README.md"
 license = "MIT"
@@ -42,10 +42,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "ty>=0.0.25",
 ]
-examples = [
-    "datasets>=3.0.0",
-    "docker>=7.1.0",
-]
+examples = ["datasets>=3.0.0", "docker>=7.1.0"]
 
 # ty: https://docs.astral.sh/ty/ — run `uv run ty check` from this directory.
 [tool.ty.src]
