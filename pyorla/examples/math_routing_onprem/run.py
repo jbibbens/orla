@@ -97,7 +97,8 @@ TRIAGE_SYSTEM_PROMPT = (
     "Output ONLY one word: easy, medium, or hard.\n"
     "- easy: straightforward algebra, arithmetic, or single-step application of a formula\n"
     "- medium: multi-step problems requiring two or three concepts\n"
-    "- hard: competition-level problems, proofs, advanced topics, or multi-step reasoning"
+    "- hard: competition-level problems, proofs, advanced topics, or multi-step reasoning\n"
+    "/no_think"
 )
 
 SOLVE_SYSTEM_PROMPT = (
@@ -114,6 +115,26 @@ DIFFICULTY_TO_ACCURACY: dict[str, float] = {
 }
 DEFAULT_ACCURACY = 0.85
 BASELINE_ACCURACY = 0.90
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_DIFFICULTY_WORD_RE = re.compile(r"\b(easy|medium|hard)\b", re.IGNORECASE)
+
+
+def _parse_difficulty_label(raw: str) -> str:
+    """Extract a difficulty keyword from potentially verbose triage output.
+
+    Qwen3 models may wrap output in ``<think>...</think>`` tags or produce
+    full sentences instead of a single word.  This strips thinking blocks
+    and searches for the first occurrence of easy/medium/hard.
+    """
+    cleaned = _THINK_RE.sub("", raw).strip()
+    cleaned = cleaned.lower().strip().rstrip(".")
+    if cleaned in DIFFICULTY_TO_ACCURACY:
+        return cleaned
+    m = _DIFFICULTY_WORD_RE.search(cleaned)
+    if m:
+        return m.group(1).lower()
+    return cleaned
 
 
 def _env(key: str, default: str) -> str:
@@ -245,8 +266,10 @@ def normalize_math_answer(s: str) -> str:
     s = s.replace("\\cdot", "*")
     s = s.strip().rstrip(".")
     s = re.sub(r"\s+", " ", s)
+    # Strip trailing percent sign so "7%" matches gold "7"
+    s_no_pct = s.rstrip().rstrip("%").strip()
     try:
-        val = float(s.replace(",", ""))
+        val = float(s_no_pct.replace(",", ""))
         if val == int(val):
             return str(int(val))
         return f"{val:.6g}"
@@ -327,7 +350,7 @@ def build_graph(
             SystemMessage(content=TRIAGE_SYSTEM_PROMPT),
             HumanMessage(content=problem),
         ])
-        label = str(reply.content).strip().lower().rstrip(".")
+        label = _parse_difficulty_label(str(reply.content))
         acc = DIFFICULTY_TO_ACCURACY.get(label, DEFAULT_ACCURACY)
         return {
             "messages": [reply],
@@ -613,7 +636,7 @@ def run_benchmark(
     print(f"  Avg out tok:  {avg_tokens:.0f} / item")
     if mode == "routed":
         print(f"  Difficulty:   {dict(difficulty_counts)}")
-    print(f"  Accuracy by level:")
+    print("  Accuracy by level:")
     for lev in sorted(level_correct.keys()):
         results = level_correct[lev]
         c = sum(results)
