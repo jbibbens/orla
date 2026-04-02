@@ -441,7 +441,6 @@ def run_benchmark(
     solve_stage = Stage("math-solve", cheap_be)
     solve_stage.client = client
     solve_stage.set_temperature(0.0)
-    solve_stage.set_max_tokens(2048)
 
     agent = build_graph(solve_stage, mode=mode)
 
