@@ -1,9 +1,7 @@
 """MATH benchmark with chain-of-thought + Orla routing on self-hosted vLLM.
 
 Uses the Hendrycks MATH dataset (Levels 1–5, seven subjects) to demonstrate
-latency gains from accuracy-based routing on local GPUs.  Chain-of-thought
-prompting produces 100–800+ output tokens per problem, making the TPS gap
-between small and large models the dominant latency factor.
+latency gains from accuracy-based routing on local GPUs.
 
 Two backends, each on its own GPU:
 
@@ -18,11 +16,6 @@ Three evaluation modes:
   the accuracy floor, and Orla picks the cheapest qualifying backend under
   ``ACCURACY_POLICY_PREFER``.  Levels 1-4 → cheap, Level 5 only → strong.
   No triage LLM call needed — zero routing overhead.
-
-Why MATH and not HotpotQA?  MATH chain-of-thought produces long outputs
-(hundreds of tokens) where TPS differences between models dominate wall time.
-HotpotQA answers are ~2 words, so all models finish in the same time
-regardless of size.
 
 Prerequisites:
 
