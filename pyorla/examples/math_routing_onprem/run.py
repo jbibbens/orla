@@ -14,8 +14,10 @@ Three evaluation modes:
 
 - **baseline**: every problem goes to the strong model.
 - **all-cheap**: every problem goes to the cheap model.
-- **routed** (default): a triage LLM classifies difficulty, then Orla picks
-  the cheapest qualifying backend under ``ACCURACY_POLICY_PREFER``.
+- **routed** (default): the dataset's built-in difficulty level (1-5) sets
+  the accuracy floor, and Orla picks the cheapest qualifying backend under
+  ``ACCURACY_POLICY_PREFER``.  Levels 1-3 → cheap, Levels 4-5 → strong.
+  No triage LLM call needed — zero routing overhead.
 
 Why MATH and not HotpotQA?  MATH chain-of-thought produces long outputs
 (hundreds of tokens) where TPS differences between models dominate wall time.
@@ -92,15 +94,6 @@ DEFAULT_STRONG_ENDPOINT = "http://localhost:8000/v1"
 DEFAULT_CHEAP_MODEL = "openai:Qwen/Qwen3-4B-Instruct-2507"
 DEFAULT_STRONG_MODEL = "openai:Qwen/Qwen3-32B"
 
-TRIAGE_SYSTEM_PROMPT = (
-    "You classify math problems by difficulty.\n"
-    "Output ONLY one word: easy, medium, or hard.\n"
-    "- easy: straightforward algebra, arithmetic, or single-step application of a formula\n"
-    "- medium: multi-step problems requiring two or three concepts\n"
-    "- hard: competition-level problems, proofs, advanced topics, or multi-step reasoning\n"
-    "/no_think"
-)
-
 SOLVE_SYSTEM_PROMPT = (
     "You are an expert mathematician. Solve the following problem step by step.\n"
     "Show all your work in detail. At the very end of your response, state your\n"
@@ -108,33 +101,16 @@ SOLVE_SYSTEM_PROMPT = (
     "Do not skip steps. Explain each transformation clearly."
 )
 
-DIFFICULTY_TO_ACCURACY: dict[str, float] = {
-    "easy": 0.30,
-    "medium": 0.60,
-    "hard": 0.85,
+LEVEL_TO_ACCURACY: dict[str, float] = {
+    "Level 1": 0.10,
+    "Level 2": 0.20,
+    "Level 3": 0.30,
+    "Level 4": 0.70,
+    "Level 5": 0.85,
 }
 DEFAULT_ACCURACY = 0.85
 BASELINE_ACCURACY = 0.90
-
-_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-_DIFFICULTY_WORD_RE = re.compile(r"\b(easy|medium|hard)\b", re.IGNORECASE)
-
-
-def _parse_difficulty_label(raw: str) -> str:
-    """Extract a difficulty keyword from potentially verbose triage output.
-
-    Qwen3 models may wrap output in ``<think>...</think>`` tags or produce
-    full sentences instead of a single word.  This strips thinking blocks
-    and searches for the first occurrence of easy/medium/hard.
-    """
-    cleaned = _THINK_RE.sub("", raw).strip()
-    cleaned = cleaned.lower().strip().rstrip(".")
-    if cleaned in DIFFICULTY_TO_ACCURACY:
-        return cleaned
-    m = _DIFFICULTY_WORD_RE.search(cleaned)
-    if m:
-        return m.group(1).lower()
-    return cleaned
+HARD_LEVEL_THRESHOLD = 4
 
 
 def _env(key: str, default: str) -> str:
@@ -257,6 +233,7 @@ def normalize_math_answer(s: str) -> str:
     """
     s = s.strip()
     s = s.replace("\\$", "").replace("$", "")
+    s = s.replace("\\dfrac", "\\frac")
     s = re.sub(r"\\text\{([^}]*)\}", r"\1", s)
     s = re.sub(r"\\mathrm\{([^}]*)\}", r"\1", s)
     s = re.sub(r"\\(?:left|right)([|()[\]])", r"\1", s)
@@ -333,49 +310,36 @@ def _user_text(state: MathState) -> str:
     return ""
 
 
+def _level_number(level: str) -> int:
+    """Extract the numeric level from strings like ``Level 3``."""
+    m = re.search(r"\d+", level)
+    return int(m.group()) if m else 5
+
+
+def _accuracy_for_item(mode: str, level: str) -> float:
+    """Return the accuracy floor for a given mode and dataset level."""
+    if mode == "baseline":
+        return BASELINE_ACCURACY
+    if mode == "all-cheap":
+        return 0.0
+    return LEVEL_TO_ACCURACY.get(level, DEFAULT_ACCURACY)
+
+
 def build_graph(
     solve_stage: Stage,
     *,
     mode: str,
-    triage_stage: Stage | None = None,
 ):
-    """Build a LangGraph for MATH: optional triage → solve with CoT."""
+    """Build a LangGraph for MATH: single solve node with CoT.
+
+    In routed mode, ``required_accuracy`` is pre-set on the state from
+    the dataset's difficulty level before invoke — no triage LLM needed.
+    """
     solve_llm = solve_stage.as_chat_model()
 
-    def triage_node(state: MathState) -> dict[str, Any]:
-        assert triage_stage is not None
-        triage_llm = triage_stage.as_chat_model()
-        problem = _user_text(state)
-        user_prompt = (
-            "Classify the following math problem as easy, medium, or hard. "
-            "Reply with ONLY that one word.\n\n"
-            f"Problem: {problem}\n\n"
-            "Difficulty:"
-        )
-        reply = triage_llm.invoke([
-            SystemMessage(content=TRIAGE_SYSTEM_PROMPT),
-            HumanMessage(content=user_prompt),
-        ])
-        label = _parse_difficulty_label(str(reply.content))
-        acc = DIFFICULTY_TO_ACCURACY.get(label, DEFAULT_ACCURACY)
-        return {
-            "messages": [reply],
-            "required_accuracy": acc,
-            "difficulty": label,
-        }
-
     def solve_node(state: MathState) -> dict[str, Any]:
-        if mode == "baseline":
-            solve_stage.set_accuracy(BASELINE_ACCURACY)
-        elif mode == "all-cheap":
-            solve_stage.set_accuracy(0.0)
-        else:
-            acc = (
-                state.required_accuracy
-                if state.required_accuracy is not None
-                else DEFAULT_ACCURACY
-            )
-            solve_stage.set_accuracy(acc)
+        acc = _accuracy_for_item(mode, state.difficulty)
+        solve_stage.set_accuracy(acc)
         solve_stage.set_accuracy_policy(ACCURACY_POLICY_PREFER)
 
         problem = _user_text(state)
@@ -383,18 +347,11 @@ def build_graph(
             SystemMessage(content=SOLVE_SYSTEM_PROMPT),
             HumanMessage(content=problem),
         ])
-        return {"messages": [reply]}
+        return {"messages": [reply], "required_accuracy": acc}
 
     g = StateGraph(MathState)
     g.add_node("solve", solve_node)
-
-    if mode == "routed":
-        g.add_node("triage", triage_node)
-        g.add_edge(START, "triage")
-        g.add_edge("triage", "solve")
-    else:
-        g.add_edge(START, "solve")
-
+    g.add_edge(START, "solve")
     g.add_edge("solve", END)
     return g.compile()
 
@@ -440,11 +397,10 @@ def _register_backends(client: OrlaClient) -> LLMBackend:
 # ---------------------------------------------------------------------------
 
 def _triage_solve_costs(
-    out: dict[str, Any], mode: str
+    out: dict[str, Any], _mode: str
 ) -> tuple[float, float]:
+    """Return ``(triage_cost, solve_cost)``.  Triage is always 0 (level-based)."""
     ai_msgs = [m for m in out["messages"] if isinstance(m, AIMessage)]
-    if mode == "routed" and len(ai_msgs) >= 2:
-        return _extract_cost(ai_msgs[0]), _extract_cost(ai_msgs[-1])
     if ai_msgs:
         return 0.0, _extract_cost(ai_msgs[-1])
     return 0.0, 0.0
@@ -487,27 +443,14 @@ def run_benchmark(
     solve_stage.set_temperature(0.0)
     solve_stage.set_max_tokens(2048)
 
-    triage_stage: Stage | None = None
-    if mode == "routed":
-        triage_stage = Stage("math-triage", cheap_be)
-        triage_stage.client = client
-        triage_stage.set_temperature(0.0)
-        triage_stage.set_max_tokens(8)
-
-    agent = build_graph(
-        solve_stage,
-        mode=mode,
-        triage_stage=triage_stage,
-    )
+    agent = build_graph(solve_stage, mode=mode)
 
     total = len(items)
     total_correct = 0
     total_cost_usd = 0.0
     total_wall_ms = 0.0
     total_output_tokens = 0
-    difficulty_counts: dict[str, int] = {
-        "easy": 0, "medium": 0, "hard": 0, "unknown": 0,
-    }
+    difficulty_counts: dict[str, int] = {"easy": 0, "hard": 0}
     level_correct: dict[str, list[bool]] = {}
 
     csv_file = None
@@ -548,9 +491,16 @@ def run_benchmark(
             print(f"{'=' * 60}")
             print(problem[:200] + ("..." if len(problem) > 200 else ""))
 
+            difficulty = (
+                "easy"
+                if _level_number(level) < HARD_LEVEL_THRESHOLD
+                else "hard"
+            )
+
             t0 = time.monotonic()
             out = agent.invoke({
                 "messages": [HumanMessage(content=problem)],
+                "difficulty": level,
             })
             wall_ms = (time.monotonic() - t0) * 1000.0
 
@@ -576,13 +526,9 @@ def run_benchmark(
             total_correct += int(correct)
             total_wall_ms += wall_ms
 
-            difficulty = out.get("difficulty", "")
-            if difficulty:
-                difficulty_counts[difficulty] = (
-                    difficulty_counts.get(difficulty, 0) + 1
-                )
-            elif mode == "routed":
-                difficulty_counts["unknown"] += 1
+            difficulty_counts[difficulty] = (
+                difficulty_counts.get(difficulty, 0) + 1
+            )
 
             level_correct.setdefault(level, []).append(correct)
 
@@ -640,8 +586,7 @@ def run_benchmark(
     print(f"  Avg cost:     ${avg_cost:.6f} / item")
     print(f"  Avg latency:  {avg_wall:.0f} ms / item")
     print(f"  Avg out tok:  {avg_tokens:.0f} / item")
-    if mode == "routed":
-        print(f"  Difficulty:   {dict(difficulty_counts)}")
+    print(f"  Routing:      {dict(difficulty_counts)}")
     print("  Accuracy by level:")
     for lev in sorted(level_correct.keys()):
         results = level_correct[lev]
