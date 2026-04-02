@@ -16,7 +16,7 @@ Three evaluation modes:
 - **all-cheap**: every problem goes to the cheap model.
 - **routed** (default): the dataset's built-in difficulty level (1-5) sets
   the accuracy floor, and Orla picks the cheapest qualifying backend under
-  ``ACCURACY_POLICY_PREFER``.  Levels 1-3 → cheap, Levels 4-5 → strong.
+  ``ACCURACY_POLICY_PREFER``.  Levels 1-4 → cheap, Level 5 only → strong.
   No triage LLM call needed — zero routing overhead.
 
 Why MATH and not HotpotQA?  MATH chain-of-thought produces long outputs
@@ -105,12 +105,12 @@ LEVEL_TO_ACCURACY: dict[str, float] = {
     "Level 1": 0.10,
     "Level 2": 0.20,
     "Level 3": 0.30,
-    "Level 4": 0.70,
+    "Level 4": 0.30,
     "Level 5": 0.85,
 }
 DEFAULT_ACCURACY = 0.85
 BASELINE_ACCURACY = 0.90
-HARD_LEVEL_THRESHOLD = 4
+HARD_LEVEL_THRESHOLD = 5
 
 
 def _env(key: str, default: str) -> str:
