@@ -21,6 +21,35 @@ def test_orla_client_from_env_default(monkeypatch: pytest.MonkeyPatch) -> None:
     c.close()
 
 
+def test_orla_client_default_timeout() -> None:
+    c = OrlaClient()
+    assert c._sync.timeout == httpx.Timeout(OrlaClient.DEFAULT_TIMEOUT)
+    assert c._async.timeout == httpx.Timeout(OrlaClient.DEFAULT_TIMEOUT)
+    c.close()
+
+
+def test_orla_client_custom_timeout() -> None:
+    c = OrlaClient(timeout=600)
+    assert c._sync.timeout == httpx.Timeout(600)
+    assert c._async.timeout == httpx.Timeout(600)
+    c.close()
+
+
+def test_orla_client_set_timeout() -> None:
+    c = OrlaClient()
+    c.set_timeout(1800)
+    assert c._sync.timeout == httpx.Timeout(1800)
+    assert c._async.timeout == httpx.Timeout(1800)
+    c.close()
+
+
+def test_orla_client_from_env_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ORLA_URL", raising=False)
+    c = OrlaClient.from_env(timeout=900)
+    assert c._sync.timeout == httpx.Timeout(900)
+    c.close()
+
+
 def test_raise_http_maps_status() -> None:
     req = httpx.Request("GET", "http://test/api/v1/health")
     resp = httpx.Response(502, request=req, text="bad gateway")

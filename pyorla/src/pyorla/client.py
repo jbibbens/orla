@@ -44,15 +44,30 @@ class OrlaClient:
     Python, use :func:`pyorla.local_server.orla_runtime` as a context manager.
     """
 
-    def __init__(self, base_url: str = "http://localhost:8081") -> None:
+    DEFAULT_TIMEOUT: float = 300
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8081",
+        *,
+        timeout: float | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
-        self._sync = httpx.Client(base_url=self.base_url, timeout=300)
-        self._async = httpx.AsyncClient(base_url=self.base_url, timeout=300)
+        t = timeout if timeout is not None else self.DEFAULT_TIMEOUT
+        self._sync = httpx.Client(base_url=self.base_url, timeout=t)
+        self._async = httpx.AsyncClient(base_url=self.base_url, timeout=t)
+
+    def set_timeout(self, seconds: float) -> None:
+        """Change the HTTP timeout for both sync and async clients."""
+        self._sync.timeout = httpx.Timeout(seconds)
+        self._async.timeout = httpx.Timeout(seconds)
 
     @classmethod
-    def from_env(cls, default: str = "http://localhost:8081") -> OrlaClient:
+    def from_env(
+        cls, default: str = "http://localhost:8081", *, timeout: float | None = None
+    ) -> OrlaClient:
         """Build a client using ``ORLA_URL`` if set, otherwise *default*."""
-        return cls(os.environ.get("ORLA_URL", default))
+        return cls(os.environ.get("ORLA_URL", default), timeout=timeout)
 
     # ------------------------------------------------------------------
     # Health

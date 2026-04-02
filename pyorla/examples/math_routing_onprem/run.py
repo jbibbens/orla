@@ -659,7 +659,7 @@ def main() -> None:
     csv_path = out_csv if out_csv else None
 
     try:
-        with orla_runtime(quiet=True) as client:
+        with orla_runtime(quiet=True, timeout=1800) as client:
             run_benchmark(
                 client,
                 items,

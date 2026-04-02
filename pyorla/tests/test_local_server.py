@@ -57,6 +57,25 @@ def test_orla_runtime_starts_and_stops(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_proc.wait.assert_called()
 
 
+def test_orla_runtime_passes_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+
+    mock_proc = MagicMock()
+    mock_proc.wait = MagicMock(return_value=0)
+    mock_proc.terminate = MagicMock()
+    mock_popen = MagicMock(return_value=mock_proc)
+
+    with (
+        patch("pyorla.local_server.subprocess.Popen", mock_popen),
+        patch("pyorla.local_server.resolve_orla_binary", return_value="/fake/orla"),
+        patch("pyorla.local_server.pick_free_port", return_value=54323),
+        patch("pyorla.local_server._wait_for_health", lambda *a, **k: None),
+    ):
+        with orla_runtime(quiet=True, timeout=1800) as client:
+            assert client._sync.timeout == httpx.Timeout(1800)
+            assert client._async.timeout == httpx.Timeout(1800)
+
+
 def test_orla_runtime_terminates_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_proc = MagicMock()
     mock_proc.wait = MagicMock(return_value=0)

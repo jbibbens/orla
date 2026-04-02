@@ -89,12 +89,16 @@ def orla_runtime(
     host: str = _DEFAULT_HOST,
     health_timeout_s: float = 30.0,
     quiet: bool = True,
+    timeout: float | None = None,
 ) -> Generator[OrlaClient, None, None]:
     """Run a local Orla server in a subprocess and yield an ``OrlaClient``.
 
     Picks a free TCP port, runs ``orla serve --listen-address <host>:<port>``, waits for
     ``/api/v1/health``, then yields an ``OrlaClient`` at ``http://<host>:<port>``.
     On context exit the client is closed and the process is terminated.
+
+    *timeout* sets the HTTP timeout (seconds) on the returned client; defaults to
+    :attr:`OrlaClient.DEFAULT_TIMEOUT`.
 
     This is not an in-process embed: it is **subprocess + loopback HTTP**, same as
     running ``orla serve`` yourself.
@@ -109,7 +113,7 @@ def orla_runtime(
     cmd = [bin_path, "serve", "--listen-address", addr]
     out_err: int | IO[Any] | None = subprocess.DEVNULL if quiet else None
     proc = subprocess.Popen(cmd, stdout=out_err, stderr=out_err)
-    client = OrlaClient(base_url)
+    client = OrlaClient(base_url, timeout=timeout)
     try:
         _wait_for_health(base_url, timeout_s=health_timeout_s)
         yield client
