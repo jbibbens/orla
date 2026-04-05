@@ -46,7 +46,9 @@ paths:
                 type: string
                 description: SSE stream with events content, thinking, done
         "400":
-          description: Bad request (missing backend, invalid JSON, unsupported policy)
+          description: Bad request (missing backend, invalid JSON, unsupported policy, unregistered workflow)
+        "403":
+          description: Access denied (backend, tool, or data label policy violation)
         "429":
           description: Rate limit exceeded (when rate_limit_rps is configured)
         "500":
@@ -119,6 +121,91 @@ paths:
           description: Validation error
         "404":
           description: Backend not found
+
+  /api/v1/policies:
+    post:
+      summary: Add access control policy
+      description: Install or replace an access control policy.
+      operationId: addPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddPolicyRequest"
+      responses:
+        "200":
+          description: Policy installed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "400":
+          description: Validation error (missing name, subjects, resources, or invalid action)
+    get:
+      summary: List access control policies
+      operationId: listPolicies
+      responses:
+        "200":
+          description: All installed policies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListPoliciesResponse"
+
+  /api/v1/policies/{name}:
+    delete:
+      summary: Remove access control policy
+      operationId: removePolicy
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the policy to remove
+      responses:
+        "200":
+          description: Policy removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "404":
+          description: Policy not found
+
+  /api/v1/workflows:
+    post:
+      summary: Register workflow DAG
+      description: >
+        Register a workflow's DAG structure so the daemon can propagate data
+        labels along edges. If a stage processes PII, all downstream stages
+        in the registered DAG inherit the label.
+      operationId: registerWorkflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterWorkflowRequest"
+      responses:
+        "200":
+          description: Workflow DAG registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "400":
+          description: Validation error (missing workflow_id or invalid edges)
 
   /api/v1/workflow/complete:
     post:
@@ -233,6 +320,20 @@ components:
             Controls fallback when no backend meets the accuracy threshold.
             "prefer" (default) falls back to the cheapest costed backend;
             "strict" fails the request.
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          description: >
+            Key-value tags identifying the caller (e.g. {"tenant": "interns"}).
+            Matched against access control policy subjects.
+        data_labels:
+          type: array
+          items:
+            type: string
+          description: >
+            Sensitivity labels on this request (e.g. ["pii"]).
+            Checked against data access control policies.
 
     Message:
       type: object
@@ -425,3 +526,83 @@ components:
           type: boolean
         error:
           type: string
+
+    AddPolicyRequest:
+      type: object
+      required: [name, subjects, resources, action]
+      properties:
+        name:
+          type: string
+          description: Unique policy identifier
+        subjects:
+          type: array
+          items:
+            type: string
+          description: Glob patterns matching request tags (e.g. "tenant:interns")
+        resources:
+          type: array
+          items:
+            type: string
+          description: Glob patterns matching resources (e.g. "backend:*", "tool:shell_*", "data:pii")
+        action:
+          type: string
+          enum: [allow, deny]
+
+    AccessPolicy:
+      type: object
+      properties:
+        name:
+          type: string
+        subjects:
+          type: array
+          items:
+            type: string
+        resources:
+          type: array
+          items:
+            type: string
+        action:
+          type: string
+          enum: [allow, deny]
+
+    ListPoliciesResponse:
+      type: object
+      required: [policies]
+      properties:
+        policies:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccessPolicy"
+
+    RegisterWorkflowRequest:
+      type: object
+      required: [workflow_id, edges]
+      properties:
+        workflow_id:
+          type: string
+          description: Workflow ID that stages will reference in execute requests
+        edges:
+          type: array
+          items:
+            type: object
+            required: [from, to]
+            properties:
+              from:
+                type: string
+                description: Source stage ID
+              to:
+                type: string
+                description: Target stage ID
+        declassifications:
+          type: array
+          items:
+            type: object
+            required: [stage_id, labels]
+            properties:
+              stage_id:
+                type: string
+              labels:
+                type: array
+                items:
+                  type: string
+          description: Stages that strip specific labels from propagation
