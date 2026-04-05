@@ -351,7 +351,11 @@ class OrlaClient:
 
 
 def _error_message_from_response(r: httpx.Response) -> str:
-    """Build a user-facing message; include JSON ``error`` when present (e.g. /api/v1/execute)."""
+    """Build a user-facing message from an error response.
+
+    Tries JSON ``error`` field first (e.g., /api/v1/execute), then falls back
+    to the plain-text body (e.g., access control 403s sent via http.Error).
+    """
     base = f"HTTP {r.status_code} {r.reason_phrase}"
     try:
         data = r.json()
@@ -361,6 +365,10 @@ def _error_message_from_response(r: httpx.Response) -> str:
                 return f"{base}: {err.strip()}"
     except Exception:
         pass
+    # Fall back to plain-text body (access control errors, validation errors).
+    text = (r.text or "").strip()
+    if text:
+        return f"{base}: {text}"
     return base
 
 

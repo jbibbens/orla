@@ -53,6 +53,7 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemM
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 
 from pyorla import (
     AccessPolicy,
@@ -218,7 +219,12 @@ def build_pipeline(
     data_labels: list[str] | None = None,
     tools: list[Any] | None = None,
 ) -> Any:
-    """Build an extract → summarize LangGraph pipeline."""
+    """Build an extract → summarize LangGraph pipeline.
+
+    When tools are provided, the extract node can call them. A ToolNode
+    executes the calls and loops back to extract until the model responds
+    with text, then the pipeline continues to summarize.
+    """
 
     extract_stage = Stage("extract", extract_backend)
     extract_stage.client = client
@@ -241,13 +247,27 @@ def build_pipeline(
 
     def extract_node(state: DocState) -> dict[str, Any]:
         reply = extract_llm.invoke([
-            SystemMessage(content="Extract the key facts from this document as bullet points."),
+            SystemMessage(
+                content="Extract the key facts from this document as bullet points. "
+                "Use any available tools to look up additional information if needed."
+            ),
             HumanMessage(content=str(state.messages[-1].content)),
         ])
         return {"messages": [reply]}
 
+    def should_use_tools(state: DocState) -> str:
+        last = state.messages[-1]
+        if isinstance(last, AIMessage) and last.tool_calls:
+            return "tools"
+        return "summarize"
+
     def summarize_node(state: DocState) -> dict[str, Any]:
-        facts = str(state.messages[-1].content)
+        # Find the last AI message with text content (skip tool call messages).
+        facts = ""
+        for m in reversed(state.messages):
+            if isinstance(m, AIMessage) and m.content and not m.tool_calls:
+                facts = str(m.content)
+                break
         reply = summarize_llm.invoke([
             SystemMessage(content="Write a one-paragraph summary from these facts."),
             HumanMessage(content=facts),
@@ -257,16 +277,27 @@ def build_pipeline(
     g = StateGraph(DocState)
     g.add_node("extract", extract_node)
     g.add_node("summarize", summarize_node)
-    g.add_edge(START, "extract")
-    g.add_edge("extract", "summarize")
-    g.add_edge("summarize", END)
+
+    if tools:
+        tool_node = ToolNode(tools)
+        g.add_node("tools", tool_node)
+        g.add_edge(START, "extract")
+        g.add_conditional_edges("extract", should_use_tools, {"tools": "tools", "summarize": "summarize"})
+        g.add_edge("tools", "extract")
+        g.add_edge("summarize", END)
+    else:
+        g.add_edge(START, "extract")
+        g.add_edge("extract", "summarize")
+        g.add_edge("summarize", END)
+
     compiled = g.compile()
 
     # Register DAG with Orla for data label propagation.
+    stages = {"extract": extract_stage, "summarize": summarize_stage}
     client.register_workflow_from_langgraph(
         f"wf-{extract_stage.id}",
         compiled,
-        {"extract": extract_stage, "summarize": summarize_stage},
+        stages,
     )
 
     return compiled

@@ -1,6 +1,6 @@
 [project]
 name = "pyorla"
-version = "1.0.6"
+version = "1.0.7"
 description = "Python SDK for Orla"
 readme = "README.md"
 license = "MIT"
