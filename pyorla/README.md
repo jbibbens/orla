@@ -4,19 +4,25 @@ Python SDK for [Orla](https://github.com/harvard-cns/orla).
 
 ## Install
 
-From [PyPI](https://pypi.org/project/pyorla/) (recommended):
+From [PyPI](https://pypi.org/project/pyorla/):
 
 ```bash
 pip install pyorla
 ```
 
-Or with uv:
+With [uv](https://docs.astral.sh/uv/), either install into the active environment:
+
+```bash
+uv pip install pyorla
+```
+
+Or, if you are already in a uv project i.e a directory with a `pyproject.toml`, add it as a dependency:
 
 ```bash
 uv add pyorla
 ```
 
-The SDK talks to a running `orla serve` daemon over HTTP. Install the Orla binary separately (see the [Quickstart](https://orlaserver.github.io/#/docs/quickstart) for Homebrew, pyorla, and related setup).
+pyorla talks to a running `orla serve` daemon over HTTP. Install the Orla binary separately (see the [Quickstart](https://orlaserver.github.io/docs/#/README) for Homebrew, pyorla, and related setup).
 
 ### Developing pyorla
 
@@ -26,7 +32,17 @@ From a clone of the Orla repo, in the `pyorla` directory:
 uv sync
 ```
 
-Run checks: `uv run ty check` and `uv run pytest`.
+To run checks, use the following make targets from the repository root:
+
+```bash
+make pyorla-lint
+```
+
+and 
+
+```bash
+make pyorla-test
+```
 
 ### Releasing to PyPI
 
