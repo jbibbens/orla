@@ -1,4 +1,4 @@
-# orla local task runner. Install: `brew install just`.
+# orla local task runner. Install via https://just.systems.
 # Run `just` for a list of recipes.
 
 # Show available recipes when invoked without arguments.
@@ -68,43 +68,3 @@ coverage:
 # Remove build artifacts.
 clean:
     rm -rf bin coverage.out coverage.html
-
-# ── demo recipes ──────────────────────────────────────────────────────
-
-# Register the four Bedrock backends + the four stages with orla.
-# Requires the daemon to be running and .env to be sourced.
-demo-setup:
-    bash demo/scripts/setup.sh
-
-# Run a baseline eval (manual stage→backend assignments from setup.sh).
-# Pass N=<number> to run fewer questions (default 25).
-demo-baseline N="25":
-    cd demo && uv run python -m demo.eval --n {{ N }} --mode baseline
-
-# Run an eval while tagging the run as "mapper" mode (the mapper must
-# be running in another shell to actually reroute stages).
-demo-mapper-eval N="25":
-    cd demo && uv run python -m demo.eval --n {{ N }} --mode mapper
-
-# Start the mapper. Runs forever (Ctrl-C to stop).
-#   INTERVAL    poll interval seconds (default 15)
-#   EPSILON     exploration probability (default 0.1; lower = less random)
-#   COST_W      cost weight in reward (default 0.05; small because Bedrock
-#               cost spread between backends is only ~5x)
-#   LAT_W       latency weight in reward (default 0.05)
-demo-mapper INTERVAL="15" EPSILON="0.1" COST_W="0.05" LAT_W="0.05":
-    cd demo && uv run python -m demo.mapper \
-        --interval {{ INTERVAL }} \
-        --epsilon {{ EPSILON }} \
-        --cost-weight {{ COST_W }} \
-        --latency-weight {{ LAT_W }}
-
-# Seed every (stage, backend) cell with N observations so the mapper
-# can start in exploit mode. Run this once after demo-setup, before
-# starting the mapper. ~$0.06 for the default 5 questions × 4 backends.
-demo-calibrate N="5":
-    cd demo && uv run python -m demo.eval.calibrate_main --per-round {{ N }}
-
-# Open the Streamlit dashboard.
-demo-dashboard:
-    cd demo && uv run streamlit run src/demo/dashboard/app.py
