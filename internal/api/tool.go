@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -151,8 +153,12 @@ func (h *toolHandler) invoke(w http.ResponseWriter, r *http.Request) {
 	// Compute cost. If the tool reported its own cost directly, use
 	// that. Otherwise sum the dot product of reported usage with the
 	// backend's rates.
-	costUSD := computeToolCost(resp, bk.Rates)
+	costUSD := computeToolCost(resp, bk.Rates, bk.Name, completionID)
 
+	// Copy resp.Usage so the async telemetry writer can read it
+	// without aliasing the provider's response. Today's providers
+	// allocate a fresh map per Invoke; future providers might pool
+	// or reuse maps, and the copy makes the boundary explicit.
 	h.recordToolCompletion(&toolCompletionInputs{
 		completionID: completionID,
 		rc:           rc,
@@ -161,7 +167,7 @@ func (h *toolHandler) invoke(w http.ResponseWriter, r *http.Request) {
 		status:       "success",
 		latencyMs:    &latencyMs,
 		costUSD:      costUSD,
-		usage:        resp.Usage,
+		usage:        copyUsage(resp.Usage),
 	})
 	h.emitMetrics(rc.Stage, backendName, "success", latencyMs)
 
@@ -170,7 +176,15 @@ func (h *toolHandler) invoke(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Orla-Completion-Id", completionID)
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		// Header is already on the wire so we cannot change the status
+		// code. Log so operators can tell that the body is truncated.
+		slog.Default().Warn("tool: encode response failed",
+			"completion_id", completionID,
+			"backend", backendName,
+			"error", err.Error(),
+		)
+	}
 }
 
 type toolCompletionInputs struct {
@@ -205,15 +219,39 @@ func (h *toolHandler) recordToolCompletion(in *toolCompletionInputs) {
 
 // computeToolCost rolls a tool response and a backend's rates into a
 // single dollar amount. If the tool reported a cost directly, that
-// wins. Otherwise cost is the sum over each (key, amount) in Usage of
-// amount times the matching Rates[key]. Returns nil when neither
-// signal is present.
-func computeToolCost(resp *provider.ToolResponse, rates map[string]float64) *float64 {
+// value is used after a sanity check. Otherwise cost is the sum over
+// each (key, amount) in Usage of amount times the matching
+// Rates[key]. Returns nil when no usable cost signal is present.
+//
+// A reported CostUSD that is negative, NaN, or +/-Inf is dropped with
+// a logged warning rather than recorded verbatim, so a buggy upstream
+// cannot poison billing aggregates. The same drop policy applies to
+// dot-product results that come out non-finite (which is only
+// possible when usage or rate values are themselves non-finite, but
+// validation should have caught those upstream).
+//
+// When Usage and Rates have no overlapping keys, the function logs a
+// warning and returns nil. Silent zero would hide a misconfiguration
+// where the tool's reported keys do not match what the platform
+// engineer priced.
+func computeToolCost(
+	resp *provider.ToolResponse,
+	rates map[string]float64,
+	backendName, completionID string,
+) *float64 {
 	if resp == nil {
 		return nil
 	}
 	if resp.CostUSD != nil {
 		c := *resp.CostUSD
+		if !isFiniteNonNegativeCost(c) {
+			slog.Default().Warn("tool: dropping non-finite or negative reported cost",
+				"backend", backendName,
+				"completion_id", completionID,
+				"cost_usd", c,
+			)
+			return nil
+		}
 		return &c
 	}
 	if len(resp.Usage) == 0 || len(rates) == 0 {
@@ -228,9 +266,56 @@ func computeToolCost(resp *provider.ToolResponse, rates map[string]float64) *flo
 		}
 	}
 	if !matched {
+		slog.Default().Warn("tool: usage keys do not overlap backend rates",
+			"backend", backendName,
+			"completion_id", completionID,
+			"usage_keys", mapKeys(resp.Usage),
+			"rate_keys", mapKeys(rates),
+		)
+		return nil
+	}
+	if !isFiniteNonNegativeCost(total) {
+		slog.Default().Warn("tool: dot-product cost is non-finite or negative",
+			"backend", backendName,
+			"completion_id", completionID,
+			"cost_usd", total,
+		)
 		return nil
 	}
 	return &total
+}
+
+// isFiniteNonNegativeCost reports whether v is a value safe to record
+// as a USD cost. Negative, NaN, and Inf are rejected.
+func isFiniteNonNegativeCost(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0
+}
+
+// copyUsage returns a shallow copy of the usage map so the async
+// telemetry writer cannot race with provider-side mutation of the
+// original. Nil in, nil out.
+func copyUsage(u map[string]float64) map[string]float64 {
+	if u == nil {
+		return nil
+	}
+	out := make(map[string]float64, len(u))
+	for k, v := range u {
+		out[k] = v
+	}
+	return out
+}
+
+// mapKeys returns the keys of m as a slice, useful for logging when
+// the values are irrelevant. Order is not stable.
+func mapKeys(m map[string]float64) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func (h *toolHandler) emitMetrics(stage, backend, status string, latencyMs int) {
