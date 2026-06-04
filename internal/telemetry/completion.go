@@ -72,7 +72,7 @@ func NewCompletionWriter(cfg CompletionWriterConfig) *CompletionWriter {
 		BufferSize: cfg.BufferSize,
 		BatchSize:  cfg.BatchSize,
 		Interval:   cfg.Interval,
-		Flush:      flushCompletions(cfg.Pool),
+		Flush:      flushCompletions(cfg.Pool, cfg.Logger),
 		Logger:     cfg.Logger,
 	})
 	return &CompletionWriter{bw: bw}
@@ -98,7 +98,7 @@ func (w *CompletionWriter) Close(ctx context.Context) error {
 	return w.bw.Close(ctx)
 }
 
-func flushCompletions(pool *pgxpool.Pool) storage.FlushFunc[*CompletionRecord] {
+func flushCompletions(pool *pgxpool.Pool, logger *slog.Logger) storage.FlushFunc[*CompletionRecord] {
 	columns := []string{
 		"completion_id", "stage_id", "workflow_run", "backend", "status",
 		"prompt_tokens", "completion_tokens", "latency_ms", "cost_usd",
@@ -113,14 +113,8 @@ func flushCompletions(pool *pgxpool.Pool) storage.FlushFunc[*CompletionRecord] {
 
 		rows := make([][]any, 0, len(items))
 		for _, rec := range items {
-			tagsBytes, err := json.Marshal(rec.Tags)
-			if err != nil {
-				tagsBytes = []byte("{}")
-			}
-			usageBytes, err := json.Marshal(rec.Usage)
-			if err != nil || rec.Usage == nil {
-				usageBytes = []byte("{}")
-			}
+			tagsBytes := encodeJSONBObject(rec.Tags, logger, "tags", rec.CompletionID)
+			usageBytes := encodeJSONBObject(rec.Usage, logger, "usage", rec.CompletionID)
 			rows = append(rows, []any{
 				rec.CompletionID,
 				rec.StageID,
@@ -148,6 +142,52 @@ func flushCompletions(pool *pgxpool.Pool) storage.FlushFunc[*CompletionRecord] {
 		}
 		return nil
 	}
+}
+
+// jsonbEmptyObject is the JSONB sentinel for an empty object. Used as
+// the default for NOT NULL JSONB columns when the source map is nil
+// or fails to marshal.
+var jsonbEmptyObject = []byte("{}")
+
+// encodeJSONBObject marshals a map[string]V into JSONB bytes safe for
+// a NOT NULL DEFAULT '{}'::jsonb column. nil or empty maps return the
+// shared "{}" sentinel. Marshal failures (NaN, +Inf, unsupported
+// values) fall back to "{}" and are logged with the column name and
+// completion id so the loss is observable.
+func encodeJSONBObject(v any, logger *slog.Logger, column, completionID string) []byte {
+	if isEmptyMap(v) {
+		return jsonbEmptyObject
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("telemetry: dropping JSONB column on marshal failure",
+				"column", column,
+				"completion_id", completionID,
+				"error", err.Error(),
+			)
+		}
+		return jsonbEmptyObject
+	}
+	return b
+}
+
+// isEmptyMap is true for nil maps and for non-nil maps of length 0.
+// Without this guard, json.Marshal of a nil map[string]string returns
+// the literal []byte("null"), which is valid JSONB but the wrong
+// shape for a column declared as "JSONB NOT NULL DEFAULT '{}'".
+func isEmptyMap(v any) bool {
+	switch m := v.(type) {
+	case nil:
+		return true
+	case map[string]string:
+		return len(m) == 0
+	case map[string]float64:
+		return len(m) == 0
+	case map[string]any:
+		return len(m) == 0
+	}
+	return false
 }
 
 func nullableString(s string) any {

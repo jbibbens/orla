@@ -139,18 +139,20 @@ func rowToCompletionRecord(row db.ListStageCompletionsRow) (*CompletionRecord, e
 	}
 	if len(row.Usage) > 0 && string(row.Usage) != "{}" {
 		var usage map[string]float64
-		if err := json.Unmarshal(row.Usage, &usage); err == nil {
-			rec.Usage = usage
+		if err := json.Unmarshal(row.Usage, &usage); err != nil {
+			return nil, fmt.Errorf("decode usage for completion %q: %w", row.CompletionID, err)
 		}
+		rec.Usage = usage
 	}
 	if row.ToolKind != nil {
 		rec.ToolKind = *row.ToolKind
 	}
-	if len(row.Tags) > 0 {
+	if len(row.Tags) > 0 && string(row.Tags) != "{}" {
 		var tags map[string]string
-		if err := json.Unmarshal(row.Tags, &tags); err == nil {
-			rec.Tags = tags
+		if err := json.Unmarshal(row.Tags, &tags); err != nil {
+			return nil, fmt.Errorf("decode tags for completion %q: %w", row.CompletionID, err)
 		}
+		rec.Tags = tags
 	}
 	return rec, nil
 }
