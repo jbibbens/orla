@@ -57,20 +57,32 @@ SELECT id FROM stages WHERE labels @> '{"exploring":true}'
 CREATE TABLE backends (
     name                    TEXT PRIMARY KEY,
     endpoint                TEXT NOT NULL,
-    model_id                TEXT NOT NULL,
+    model_id                TEXT,
     api_key_env_var         TEXT NOT NULL DEFAULT '',
-    max_concurrency         INTEGER NOT NULL DEFAULT 1,
+    max_concurrency         INTEGER NOT NULL DEFAULT 1
+                              CHECK (max_concurrency >= 1),
+    rate_per_second         DOUBLE PRECISION,
+    quality                 DOUBLE PRECISION,
+    kind                    TEXT NOT NULL DEFAULT 'llm'
+                              CHECK (kind IN ('llm', 'tool')),
+    tool_kind               TEXT,
     input_cost_per_mtoken   DOUBLE PRECISION,
     output_cost_per_mtoken  DOUBLE PRECISION,
-    quality                 DOUBLE PRECISION,
+    rates                   JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
-`*_cost_per_mtoken` and `quality` are platform-engineer-supplied priors. Orla does not act on them directly. The mapper does. They are persisted so the mapper can read them as part of its state.
+`kind` discriminates the two backend flavors.
 
-`max_concurrency` is the only operational cap orla enforces directly.
+- `'llm'` backends speak OpenAI-compatible chat completions. `model_id` is required. Cost comes from `input_cost_per_mtoken` and `output_cost_per_mtoken`. The orla proxy computes `cost_usd` at write time as `(prompt_tokens × input_cost + completion_tokens × output_cost) / 1_000_000`. The `rates` column is unused for LLM backends and rejected at registration time.
+
+- `'tool'` backends speak a kind-specific JSON RPC over HTTP. `tool_kind` identifies the family (`'structure-prediction'`, `'docking'`, and so on). `model_id` is unused. Cost comes from the `rates` JSONB, a map of `resource_name` to USD-per-unit. The tool wrapper reports a parallel `usage` map on each response, and orla computes `cost_usd` as the dot product of the two maps. A tool can also short-circuit by setting `cost_usd` directly on its response, which is recorded verbatim after a non-negative-finite sanity check.
+
+`quality` is a platform-engineer-supplied prior. Orla does not act on it directly. The mapper does. It is persisted so the mapper can read it as part of its state.
+
+`max_concurrency` is the only operational cap orla enforces directly. `rate_per_second` is enforced per orla process.
 
 ### `completion_records`
 
@@ -85,6 +97,8 @@ CREATE TABLE completion_records (
     status            TEXT NOT NULL,
     prompt_tokens     INTEGER,
     completion_tokens INTEGER,
+    usage             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tool_kind         TEXT,
     latency_ms        INTEGER,
     cost_usd          DOUBLE PRECISION,
     tags              JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -94,7 +108,9 @@ CREATE INDEX idx_completion_stage_time ON completion_records(stage_id, created_a
 CREATE INDEX idx_completion_workflow ON completion_records(workflow_run) WHERE workflow_run IS NOT NULL;
 ```
 
-`status` is either `"success"` or `"error"`. One row per `/v1/chat/completions` call, written async via `BatchWriter`. `tags` carries the `X-Orla-Tag-*` map verbatim.
+`status` is either `"success"` or `"error"`. One row per `/v1/chat/completions` or `/v1/tools/{kind}` dispatch, written async via `BatchWriter`. `tags` carries the `X-Orla-Tag-*` map verbatim.
+
+LLM rows populate `prompt_tokens` and `completion_tokens` and leave `usage` as the empty object. Tool rows leave the token columns NULL and populate `usage` with the resources the wrapper reported, with `tool_kind` set to the backend's tool family. To distinguish tool rows in a query, filter on `tool_kind IS NOT NULL` rather than `prompt_tokens IS NULL`. `cost_usd` is the final dollar amount in both cases, computed by the proxy at write time.
 
 A GIN index on `tags` is not added by default. Most mapper queries filter on `stage_id` first, which the b-tree already covers. Add `CREATE INDEX idx_completion_tags ON completion_records USING gin (tags)` if profiling shows tag-filtered queries are hot.
 
