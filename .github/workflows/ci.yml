@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# CI is `just check`. If you change a step, change it in justfile.
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: extractions/setup-just@v3
+      - name: Install golangci-lint
+        # Pre-built v2 binary (built with current Go). The original v1
+        # action shipped a binary compiled against Go 1.24 which choked
+        # on Go 1.26 source — v2's release binaries don't have that
+        # problem and install in seconds vs ~1m30s for `go install`.
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" latest
+      - name: Install lychee
+        uses: taiki-e/install-action@v2
+        with:
+          tool: lychee
+      - name: Check (build + test -race + lint + links)
+        run: just check
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true

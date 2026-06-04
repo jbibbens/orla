@@ -1,37 +1,33 @@
-# golangci-lint configuration file
-# See https://golangci-lint.run/usage/configuration/
 version: "2"
-
-linters:
-  enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - errorlint      # Check error wrapping (Go 1.13+)
-    - gosec          # Security linter (important for exec.CommandContext)
-    - copyloopvar    # Detect loop variable copying issues
-    - goconst        # Find repeated strings that could be constants
-    - misspell       # Find common typos
-  settings:
-    errcheck:
-      check-type-assertions: true
-      check-blank: true
-    staticcheck:
-      checks: ["all"]
-    gosec:
-      excludes:
-        - G204  # subprocess launched with variable - intentional for tool paths
-    goconst:
-      min-len: 3
-      min-occurrences: 3
-
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
 
 run:
   timeout: 5m
   tests: true
-  relative-path-mode: wd
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+
+  settings:
+    gosec:
+      excludes:
+        - G204  # subprocess with variable — N/A (we don't shell out)
+        - G115  # int conversions are validated at boundaries
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errcheck
+          - gosec

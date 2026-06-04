@@ -1,183 +1,72 @@
-// Package config provides configuration management for Orla: load from a
-// single config file path, or use defaults when path is empty.
+// Package config loads the orla daemon configuration from environment
+// variables (prefixed with ORLA_).
+//
+// Every option has a sensible default except DATABASE_URL, which is
+// required. There is no YAML config file in v1; env vars are the single
+// source of truth so containerized deployments work without a sidecar
+// config file.
 package config
 
 import (
-	"fmt"
+	"context"
+	"time"
 
-	"github.com/harvard-cns/orla/internal/core"
-	"github.com/spf13/viper"
-	"go.uber.org/zap"
+	"github.com/sethvargo/go-envconfig"
 )
 
-const (
-	DefaultModel = "openai:qwen3:0.6b"
-)
+// EnvPrefix is the prefix applied to every env var bound to Config.
+const EnvPrefix = "ORLA_"
 
-type OrlaLogLevel string
+// Config is the full daemon configuration. Defaults live in the struct
+// tags; precedence is env var > default.
+type Config struct {
+	// DatabaseURL is the Postgres connection URL. Required.
+	DatabaseURL string `env:"DATABASE_URL, required"`
 
-const (
-	OrlaLogLevelDebug OrlaLogLevel = "debug"
-	OrlaLogLevelInfo  OrlaLogLevel = "info"
-	OrlaLogLevelWarn  OrlaLogLevel = "warn"
-	OrlaLogLevelError OrlaLogLevel = "error"
-	OrlaLogLevelFatal OrlaLogLevel = "fatal"
-)
+	// ListenAddress is the address the HTTP server binds to.
+	ListenAddress string `env:"LISTEN_ADDRESS, default=localhost:8081"`
 
-var validLogLevels = map[OrlaLogLevel]struct{}{
-	OrlaLogLevelDebug: {},
-	OrlaLogLevelInfo:  {},
-	OrlaLogLevelWarn:  {},
-	OrlaLogLevelError: {},
-	OrlaLogLevelFatal: {},
+	// LogFormat is "text" or "json".
+	LogFormat string `env:"LOG_FORMAT, default=text"`
+
+	// LogLevel is "debug", "info", "warn", or "error".
+	LogLevel string `env:"LOG_LEVEL, default=info"`
+
+	// MaxRequestBytes is the maximum body size for non-streaming JSON
+	// endpoints. Streaming endpoints are unconstrained.
+	MaxRequestBytes int64 `env:"MAX_REQUEST_BYTES, default=10485760"` // 10 MB
+
+	// HTTP server timeouts. WriteTimeout is long because streaming
+	// chat completions can run for minutes.
+	ReadTimeout       time.Duration `env:"READ_TIMEOUT, default=30s"`
+	ReadHeaderTimeout time.Duration `env:"READ_HEADER_TIMEOUT, default=10s"`
+	WriteTimeout      time.Duration `env:"WRITE_TIMEOUT, default=30m"`
+	IdleTimeout       time.Duration `env:"IDLE_TIMEOUT, default=120s"`
+
+	// ShutdownTimeout is the maximum time graceful shutdown is allowed
+	// before the process exits.
+	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT, default=30s"`
+
+	// Postgres pool settings.
+	DBMaxOpenConns    int           `env:"DB_MAX_OPEN_CONNS, default=20"`
+	DBMaxIdleConns    int           `env:"DB_MAX_IDLE_CONNS, default=20"`
+	DBConnMaxLifetime time.Duration `env:"DB_CONN_MAX_LIFETIME, default=30m"`
 }
 
-func IsValidMapKey[K comparable, V any](m map[K]V, key K) bool {
-	_, ok := m[key]
-	return ok
+// Load reads Config from process environment variables. Validation
+// errors (e.g. missing DATABASE_URL) are returned as-is from envconfig.
+func Load(ctx context.Context) (*Config, error) {
+	return loadWith(ctx, envconfig.OsLookuper())
 }
 
-// OrlaOutputFormat represents the output format for agent mode
-type OrlaOutputFormat string
-
-const (
-	OrlaOutputFormatAuto  OrlaOutputFormat = "auto"
-	OrlaOutputFormatRich  OrlaOutputFormat = "rich"
-	OrlaOutputFormatPlain OrlaOutputFormat = "plain"
-)
-
-var validOutputFormats = map[OrlaOutputFormat]struct{}{
-	OrlaOutputFormatAuto:  {},
-	OrlaOutputFormatRich:  {},
-	OrlaOutputFormatPlain: {},
-}
-
-type OrlaLogFormat string
-
-const (
-	OrlaLogFormatPretty OrlaLogFormat = "pretty"
-	OrlaLogFormatJSON   OrlaLogFormat = "json"
-)
-
-var validLogFormats = map[OrlaLogFormat]struct{}{
-	OrlaLogFormatPretty: {},
-	OrlaLogFormatJSON:   {},
-}
-
-// OrlaConfig represents the orla configuration for agent mode (and minimal shared settings).
-// TODO(jadidbourbaki): move agent and service config to separate structs.
-type OrlaConfig struct {
-	// Service only
-	ListenAddress string `yaml:"listen_address,omitempty" mapstructure:"listen_address"` // address to bind (e.g. "localhost:8081", ":8081")
-	RateLimitRPS  int    `yaml:"rate_limit_rps,omitempty" mapstructure:"rate_limit_rps"`   // max requests/sec for execute and backends; 0 = disabled
-	// Common to both service and agent
-	LogFormat OrlaLogFormat `yaml:"log_format,omitempty" mapstructure:"log_format"` // the log format, "pretty" or "json"
-	LogLevel  string        `yaml:"log_level,omitempty" mapstructure:"log_level"`   // the log level, "debug", "info", "warn", "error", "fatal"
-	// Agent only (ignored by orla serve)
-	LLMBackend   *core.LLMBackend `yaml:"llm_backend,omitempty" mapstructure:"llm_backend"`     // LLM backend configuration (endpoint, type, api_key)
-	Model        string           `yaml:"model,omitempty" mapstructure:"model"`                 // model identifier (e.g., "openai:qwen3:0.6b", "openai:gpt-4")
-	Streaming    bool             `yaml:"streaming,omitempty" mapstructure:"streaming"`         // enable streaming responses
-	OutputFormat OrlaOutputFormat `yaml:"output_format,omitempty" mapstructure:"output_format"` // output format: "auto", "rich", or "plain"
-	ShowThinking bool             `yaml:"show_thinking,omitempty" mapstructure:"show_thinking"` // show thinking trace output (for thinking-capable models)
-	ShowProgress bool             `yaml:"show_progress,omitempty" mapstructure:"show_progress"` // show progress messages even when UI is disabled (e.g., when stdin is piped)
-}
-
-// setupViper sets defaults and, if configPath is non-empty, reads that file only.
-func setupViper(configPath string) error {
-	viper.Reset()
-	setViperDefaults()
-
-	if configPath == "" {
-		zap.L().Debug("no config path provided, using defaults")
-		return nil
+// loadWith is the test seam for injecting a custom lookuper.
+func loadWith(ctx context.Context, lookuper envconfig.Lookuper) (*Config, error) {
+	var c Config
+	if err := envconfig.ProcessWith(ctx, &envconfig.Config{
+		Target:   &c,
+		Lookuper: envconfig.PrefixLookuper(EnvPrefix, lookuper),
+	}); err != nil {
+		return nil, err
 	}
-
-	viper.SetConfigFile(configPath)
-	if err := viper.ReadInConfig(); err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
-	}
-	return nil
-}
-
-// setViperDefaults sets default values in Viper
-func setViperDefaults() {
-	viper.SetDefault("listen_address", "localhost:8081")
-	viper.SetDefault("rate_limit_rps", 0)
-	viper.SetDefault("log_format", "json")
-	viper.SetDefault("log_level", "info")
-	viper.SetDefault("model", DefaultModel)
-	viper.SetDefault("auto_start_ollama", true)
-	viper.SetDefault("auto_configure_ollama_service", false)
-	viper.SetDefault("streaming", true)
-	viper.SetDefault("output_format", "auto")
-	viper.SetDefault("show_thinking", false)
-	viper.SetDefault("show_progress", false)
-}
-
-// LoadConfig loads configuration from a single file path. If configPath is empty,
-// returns defaults only (no file read).
-func LoadConfig(configPath string) (*OrlaConfig, error) {
-	setupViperErr := setupViper(configPath)
-	if setupViperErr != nil {
-		return nil, setupViperErr
-	}
-
-	cfg := &OrlaConfig{}
-	unmarshalErr := viper.Unmarshal(cfg)
-	if unmarshalErr != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", unmarshalErr)
-	}
-
-	// Default LLMBackend for local Ollama when using default model
-	if cfg.LLMBackend == nil && cfg.Model == DefaultModel {
-		cfg.LLMBackend = &core.LLMBackend{
-			Endpoint: "http://localhost:11434/v1",
-			Type:     core.LLMInferenceAPITypeOpenAI,
-		}
-	}
-
-	validateConfigErr := validateConfig(cfg)
-	if validateConfigErr != nil {
-		return nil, validateConfigErr
-	}
-
-	return cfg, nil
-}
-
-func validateConfig(cfg *OrlaConfig) error {
-	if !IsValidMapKey(validLogFormats, cfg.LogFormat) {
-		return fmt.Errorf("log_format must be one of: %s, got '%s'", core.JoinMapKeys(validLogFormats), cfg.LogFormat)
-	}
-
-	if !IsValidMapKey(validLogLevels, OrlaLogLevel(cfg.LogLevel)) {
-		return fmt.Errorf("log_level must be one of: %s, got '%s'", core.JoinMapKeys(validLogLevels), cfg.LogLevel)
-	}
-
-	if !IsValidMapKey(validOutputFormats, cfg.OutputFormat) {
-		return fmt.Errorf("output_format must be one of: %s, got '%s'", core.JoinMapKeys(validOutputFormats), cfg.OutputFormat)
-	}
-
-	if err := validateLLMBackend(cfg.LLMBackend); err != nil {
-		return fmt.Errorf("llm_backend: %w", err)
-	}
-
-	return nil
-}
-
-func validateLLMBackend(b *core.LLMBackend) error {
-	if b == nil {
-		return nil
-	}
-	if b.Quality != nil {
-		if q := *b.Quality; !(q >= 0 && q <= 1) {
-			return fmt.Errorf("quality must be in [0.0, 1.0]; got %v", q)
-		}
-	}
-	if b.CostModel != nil {
-		in, out := b.CostModel.InputCostPerMToken, b.CostModel.OutputCostPerMToken
-		if !core.IsFinite(in) || !core.IsFinite(out) || in < 0 || out < 0 {
-			return fmt.Errorf("cost_model rates must be finite non-negative numbers; got input=%v, output=%v", in, out)
-		}
-	}
-	return nil
+	return &c, nil
 }

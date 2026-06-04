@@ -1,46 +1,36 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with `go test -c`
-*.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.out
-coverage.html
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
 # Build output
 bin/
+dist/
 
-# env file
-.env
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.html
+coverage.txt
 
-# Editor/IDE
-# .idea/
-# .vscode/
-*.code-workspace
-
+# Editor / OS
 .DS_Store
+.idea/
+.vscode/
+*.swp
+*~
 
-# SWE-bench Lite dataset (committed as dataset.zip; unzipped in Docker)
-examples/swe_bench_lite/dataset/dev/
-examples/swe_bench_lite/dataset/test/
+# Demo cache
+demo/.cache/
 
-# DAG-Math dataset (committed as dataset.zip; unzipped in Docker)
-examples/dag_math_eval/dataset/test/
+# Direnv / local env
+.envrc
+.env
+.env.local
+.cache/
+
+# Claude Code local config
+.claude/
+
+# Python local artifacts (defensive — orla v2 is Go, but keep these
+# in case a Python tool lands here later).
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/

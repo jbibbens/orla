@@ -6,8 +6,7 @@
   <a href="https://goreportcard.com/report/github.com/harvard-cns/orla"><img src="https://img.shields.io/badge/go%20report-A+-brightgreen.svg?style=flat" alt="Go Report Card"></a>
   <a href="https://www.bestpractices.dev/projects/6573"><img src="https://www.bestpractices.dev/projects/6573/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://github.com/harvard-cns/orla/actions/workflows/build.yml"><img src="https://github.com/harvard-cns/orla/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-  <a href="https://github.com/harvard-cns/orla/actions/workflows/pyorla-ci.yml"><img src="https://github.com/harvard-cns/orla/actions/workflows/pyorla-ci.yml/badge.svg" alt="pyorla CI"></a>
-  <a href="https://pypi.org/project/pyorla/"><img src="https://img.shields.io/pypi/v/pyorla" alt="pyorla on PyPI"></a>
+  <a href="https://codecov.io/gh/harvard-cns/orla"><img src="https://codecov.io/gh/harvard-cns/orla/branch/main/graph/badge.svg" alt="Codecov"></a>
 </p>
 
 Please see our website for the most up to date information.
@@ -35,16 +34,18 @@ We welcome any and all open-source contributions to orla. Orla is designed to be
 
 ## Getting Started
 
-Installing the orla daemon:
+Install the orla daemon from source:
 
 ```bash
-brew install --cask harvard-cns/orla/orla
+go install github.com/harvard-cns/orla/cmd/orla@latest
 ```
 
-Installing the orla client SDK:
+Or build it locally:
 
 ```bash
-pip install pyorla
+git clone https://github.com/harvard-cns/orla
+cd orla
+go build -o bin/orla ./cmd/orla
 ```
 
 Visit our [website](https://orlaserver.github.io) to learn more.
@@ -70,4 +71,3 @@ If you use Orla for your research, we would greatly appreciate it if you cite ou
 
 - For technical questions and feature requests, please use [GitHub Issues](https://github.com/harvard-cns/orla/issues)
 - For security disclosures, please see [SECURITY.md](SECURITY.md).
-
