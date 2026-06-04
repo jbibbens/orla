@@ -178,6 +178,13 @@ for _, tt := range tests {
 }
 ```
 
+Always write struct literals inside table cases with field names.
+Positional literals break silently when the struct grows a field,
+and the failure shows up as a test passing on the wrong input
+rather than as a compile error. The same rule applies to any
+struct literal where the field types do not uniquely identify the
+field by position.
+
 ### Naming
 
 `Test<Type>_<Scenario>` or `Test<FunctionName>_<Scenario>`. The
@@ -277,13 +284,39 @@ Rules:
 - Wrap with `fmt.Errorf("operation: %w", err)`. Include enough
   context that the caller can tell which operation failed without
   reading the trace.
+- Error strings start lowercase and end without punctuation. They
+  read as the leaf of a wrapped chain. `fmt.Errorf("decode body:
+  %w", err)` chains cleanly into `"telemetry: decode body: ..."`,
+  whereas a capitalized or period-terminated leaf produces ugly
+  joins.
 - Return sentinel errors (`var ErrNotFound = errors.New(...)`) for
-  conditions callers branch on. Compare with `errors.Is`.
+  conditions callers branch on. Compare with `errors.Is`, never with
+  string matching. Document the sentinel in the package doc.
+- Use `errors.As` for typed-error inspection. For multiple errors
+  from concurrent work, `errors.Join` is the stdlib aggregator. Do
+  not write hand-rolled multi-error types.
 - Validation errors should describe both the constraint and the bad
   input: `"max_concurrency must be >= 1, got 0"`.
 - Don't swallow errors. If an operation can fail and you choose to
   proceed anyway, log at warn level with enough context that an
   operator can investigate.
+- Don't encode failure as a sentinel value of the result type. A
+  function that returns `-1` or `""` or `NaN` to mean "not found"
+  forces every caller to remember the rule. Return `(T, bool)` for
+  lookups and `(T, error)` for fallible work.
+
+### Context
+
+Pass `context.Context` as the first parameter on every function that
+touches the database, the network, or a goroutine. Plumb the request
+context from the HTTP handler all the way down to the pgx call so
+cancellation and deadlines propagate.
+
+Never store a context on a struct field. A struct that needs
+cancellation gets a `Shutdown(ctx context.Context)` method instead.
+
+`context.Background()` is reserved for top-level main and tests.
+Anywhere else it indicates a missing plumb.
 
 ### Logging
 
@@ -313,13 +346,44 @@ processes.
   Don't use channels as locks.
 - When passing maps across goroutine boundaries, copy them at the
   boundary unless the producer documents the no-mutate contract.
-  See `copyUsage` in `internal/api/tool.go` for the pattern.
+  `maps.Clone` is the one-line stdlib helper.
+- Do not copy a struct that contains a `sync.Mutex`, a
+  `sync.RWMutex`, or an `atomic.*` value. Pass it by pointer through
+  arguments and return values. `go vet` catches most cases, and the
+  resulting bug under load looks like phantom unlock failures.
+
+### Goroutines
+
+Every goroutine has a documented exit. Either it returns when a
+context is cancelled, it reads from a channel the owner closes, or
+the caller calls a `Stop` or `Shutdown` method that joins it. Never
+start a goroutine from `init`, from a constructor that has no
+`Stop`, or from an HTTP handler without a way to wait on it.
+
+The `BatchWriter` and the scheduler executors are the canonical
+patterns. Match them.
+
+### Type assertions
+
+Always use the comma-ok form: `v, ok := x.(T)`. A bare `x.(T)`
+panics on mismatch and crashes the daemon. The same rule applies to
+map reads where the absent case is meaningful: `v, ok := m[k]`.
+
+### Interfaces
+
+Define an interface in the package that consumes it, not the package
+that implements it. Add an interface only when there is a real
+second implementation or a real fake. Producers return concrete
+types so callers see the full surface.
+
+`backends.Registry` is the right pattern: defined in `backends`
+because both `PostgresRegistry` and `FakeRegistry` live there and
+serve consumers in `internal/api`.
 
 ### Optional fields
 
 Use pointer types for optional values: `*int`, `*float64`,
-`*string`. nil means "not set". Helpers like `core.IntPtr` and
-`new(string)` are both fine.
+`*string`. nil means "not set".
 
 For maps in patch requests, use `*map[K]V` so the caller can
 distinguish three states:
@@ -330,14 +394,73 @@ distinguish three states:
 
 See `backends.PatchRequest.Rates` for the canonical example.
 
+### Deferred Close
+
+On anything writable, do not write `defer x.Close()` without
+inspecting the error. A `*sql.Tx`, a buffered writer, or a flushable
+sink can fail at `Close` and lose writes. Use a deferred closure
+that captures a named return so the error surfaces:
+
+```go
+func write(...) (err error) {
+    f, err := os.Create(path)
+    if err != nil { return err }
+    defer func() {
+        if cerr := f.Close(); cerr != nil && err == nil {
+            err = cerr
+        }
+    }()
+    ...
+}
+```
+
+Read-only handles are exempt. A `defer body.Close()` on an HTTP
+response body is fine.
+
 ### Validation
 
-Validate at boundaries: HTTP handlers, database reads from
-operator-managed columns, anything coming in from outside the
-process. Once a value is past the boundary, trust it.
+Validate at four boundaries:
 
-Helpers like `isFiniteNonNegative(float64) bool` and
-`validateRates(map) string` keep the boundary checks readable.
+1. The HTTP handler before any business logic runs.
+2. The storage layer when reading an operator-managed JSONB or
+   nullable column.
+3. The proxy when consuming a tool wrapper's reported usage or
+   self-reported cost.
+4. The scheduler when accepting a new request that could exceed
+   capacity or rate limits.
+
+Past these boundaries values are trusted and not re-checked. A
+helper like `isFiniteNonNegative(float64) bool` keeps the boundary
+checks readable. Don't sprinkle finite-checks throughout the call
+stack.
+
+### Use the standard library
+
+Go 1.26's standard library covers most of the helpers a new contributor
+would otherwise hand-roll. Reach for these before writing your own:
+
+- `maps.Clone(m)` for shallow map copy. `maps.Keys(m)` returns an
+  iterator. `slices.Sorted(maps.Keys(m))` gives a sorted slice.
+- `slices.Sort`, `slices.Contains`, `slices.Concat`, `slices.Collect`
+  are the modern replacements for hand-rolled loops.
+- `cmp.Or(a, b, c)` picks the first non-zero value. The common
+  `if x == "" { x = fallback }` pattern collapses to one line.
+- `errors.Is`, `errors.As`, `errors.Join` for error introspection
+  and aggregation.
+- `sync.OnceFunc`, `sync.OnceValue` for one-shot initialization.
+- `context.WithTimeout`, `context.AfterFunc` for cancellation.
+- `golang.org/x/sync/errgroup` for parallel goroutines with shared
+  cancellation. Use it instead of hand-rolling
+  done-channels-plus-select-on-context.
+
+Already-imported deps to use rather than re-implementing:
+
+- `github.com/cenkalti/backoff/v4` for retries with exponential
+  backoff.
+- `github.com/google/uuid` for ids.
+- `golang.org/x/time/rate` for token-bucket rate limiting.
+- `github.com/jackc/pgx/v5` types for nullable database columns
+  (`pgtype.Text`, `pgtype.Timestamptz`).
 
 ## Database and storage
 
@@ -377,15 +500,23 @@ from the queries and will lose your changes.
 
 ### JSONB columns
 
-Use the helpers in `internal/telemetry/completion.go`:
+Hard rules:
 
-- `encodeJSONBObject` returns valid `{}` bytes for nil or empty maps
-  and logs marshal failures. The default for JSONB columns must be
-  `'{}'::jsonb`, not `null`, even if Go would naturally encode a nil
-  map as JSON `null`.
-- On the read path, surface unmarshal errors. Don't silently set
-  fields to nil when the JSONB column is malformed: an operator hand
-  edit or schema drift will silently zero downstream calculations.
+1. **Never write SQL NULL into a JSONB column we own.** The default
+   for every JSONB column we declare is `'{}'::jsonb` or
+   `'[]'::jsonb`. Go's `json.Marshal(nil)` returns the bytes
+   `"null"`, which the column will accept and then downstream
+   queries like `tags->>'tenant'` silently return NULL. Use
+   `encodeJSONBObject` in `internal/telemetry/completion.go` which
+   substitutes `"{}"` for nil and empty maps.
+2. **Surface unmarshal errors on the read path.** A malformed JSONB
+   cell means schema drift or hand-editing, not "no data". Returning
+   nil with no error silently zeroes downstream calculations.
+   `internal/backends/registry.go:unmarshalRates` is the pattern.
+3. **Distinguish absent, null, and empty for patch requests.** Use
+   `*map[K]V`. nil pointer means no change. Pointer to nil or empty
+   map means clear. Pointer to populated map means overwrite. See
+   `backends.PatchRequest.Rates`.
 
 ## Cost reporting
 
