@@ -23,125 +23,110 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 
 ### prerequisites
 
-orla requires go 1.23+. Please make sure you have Go installed. Check with 
-
-```bash
-go version
-```
-
-orla also required [golangci-lint](https://golangci-lint.run/) for linting. 
+- Go 1.26+ — check with `go version`
+- [just](https://just.systems) — task runner used for all local pipelines
+- [golangci-lint](https://golangci-lint.run/) v2 — for linting
+- Docker — required by storage integration tests (testcontainers)
 
 ### setup steps
 
-first install dependencies by running
+Verify everything is wired up by running the full local CI pipeline:
 
 ```bash
-make deps
+just check
 ```
 
-then you can verify the setup using
+That runs build, test (with the race detector), lint, and link checks — the same gate CI runs. Individual recipes:
 
 ```bash
-make lint
-```
-
-and
-
-```bash
-make test
-```
-
-try building the project using
-
-```bash
-make build
+just build        # compile every package
+just test         # tests only
+just lint         # golangci-lint v2
+just fmt          # go fmt + go mod tidy
+just binary       # build bin/orla
+just              # list all recipes
 ```
 
 ## making changes
 
 ### Workflow
 
-1. create a branch from `main`:
-
-```bash
-git checkout -b <your_github_username>/<descriptive_name>
-```
-
-2. write or update tests for your changes
-
-3. run tests and linter:
+1. Create a branch from `main`:
 
    ```bash
-   make test
-   make lint
+   git checkout -b <your_github_username>/<descriptive_name>
    ```
 
-4. commit your changes with clear, descriptive commit messages:
+2. Write or update tests for your changes.
+
+3. Run `just check` and make sure it's green.
+
+4. Commit your changes with [conventional commit](https://www.conventionalcommits.org/en/v1.0.0/) messages — one sentence each:
+
    ```bash
-   git commit -m "<message>"
+   git commit -m "feat: add support for batched feedback ingestion"
    ```
 
 ### commit message guidelines
 
-we follow [conventional commit](https://www.conventionalcommits.org/en/v1.0.0/) message style:
+We follow [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/). Examples:
 
-- `feat: add hot reload support for tools`
-- `fix: resolve shebang parsing edge case`
-- `docs: update README with installation instructions`
-- `test: add tests for tool discovery`
+- `feat: add hot reload support for tool backends`
+- `fix: resolve race in scheduler queue depth metric`
+- `docs: clarify two-persona contract in personas.md`
+- `test: add coverage for batch writer drop policy`
 - `refactor: simplify config loading logic`
+- `chore: bump go-chi to v5.4`
 
 ## submitting changes
 
 ### pull request process
 
-1. push your branch to your fork:
+1. Push your branch to your fork:
    ```bash
-   git push origin feature/your-feature-name
+   git push origin <your_github_username>/<descriptive_name>
    ```
 
-2. create a pull request on github.
+2. Create a pull request on GitHub.
 
-3. please ensure CI checks pass before asking for a review.
+3. Ensure CI is green before requesting review.
 
-4. please address reviewer feedback
+4. Address reviewer feedback.
 
 ### pull request checklist
 
 Before submitting, make sure:
 
 - [ ] You've added tests for new functionality
-- [ ] All tests pass (`make test`)
-- [ ] Linting passes (`make lint`)
-- [ ] Code is formatted (`make format`)
-- [ ] Documentation is updated if needed
-- [ ] Commit messages are clear and descriptive
-
+- [ ] `just check` passes locally
+- [ ] Documentation under `docs/` is updated if behavior or wire contract changed
+- [ ] Commit messages follow the conventional commit format
 
 ## testing
 
-run all tests using
+Run all tests with the race detector:
 
 ```bash
-make test
+just test
 ```
 
-run tests with verbose output using
+For coverage:
 
 ```bash
-VERBOSE=1 make test
+just coverage    # writes coverage.html
 ```
+
+Storage tests use [testcontainers](https://testcontainers.com/) and require Docker to be running.
 
 ## areas for contribution
 
-we welcome contributions in many areas including bug fixes, features, documentation,
-tests, tooling, code quality, security patches, and performance optimizations.
+We welcome contributions in many areas including bug fixes, new features, documentation, tests, tooling, code quality, security patches, and performance optimizations.
 
 ## recognition
 
-contributors will be recognized in
+Contributors will be recognized in:
 
-1. github contributors list
-2. release notes
+1. The GitHub contributors list
+2. Release notes
 
 Thank you for contributing to orla!
