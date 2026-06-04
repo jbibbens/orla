@@ -91,7 +91,7 @@ func (r *PostgresRegistry) Insert(ctx context.Context, b *Backend) (*Backend, er
 		}
 		return nil, fmt.Errorf("backends: insert: %w", err)
 	}
-	return toBackend(row), nil
+	return toBackend(row)
 }
 
 func (r *PostgresRegistry) Get(ctx context.Context, name string) (*Backend, error) {
@@ -102,7 +102,7 @@ func (r *PostgresRegistry) Get(ctx context.Context, name string) (*Backend, erro
 		}
 		return nil, fmt.Errorf("backends: get: %w", err)
 	}
-	return toBackend(row), nil
+	return toBackend(row)
 }
 
 func (r *PostgresRegistry) List(ctx context.Context) ([]*Backend, error) {
@@ -112,7 +112,11 @@ func (r *PostgresRegistry) List(ctx context.Context) ([]*Backend, error) {
 	}
 	out := make([]*Backend, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toBackend(row))
+		b, err := toBackend(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
 	}
 	return out, nil
 }
@@ -158,7 +162,10 @@ func (r *PostgresRegistry) Patch(ctx context.Context, name string, p PatchReques
 		current.RatePerSecond = p.RatePerSecond
 	}
 	if p.Rates != nil {
-		b, err := marshalRates(p.Rates)
+		// *p.Rates may be nil or empty (caller wants to clear) or
+		// populated (caller wants to overwrite). Both produce valid
+		// JSONB via marshalRates.
+		b, err := marshalRates(*p.Rates)
 		if err != nil {
 			return nil, fmt.Errorf("backends: patch: encode rates: %w", err)
 		}
@@ -187,7 +194,7 @@ func (r *PostgresRegistry) Patch(ctx context.Context, name string, p PatchReques
 		return nil, fmt.Errorf("backends: patch: commit: %w", err)
 	}
 
-	return toBackend(updated), nil
+	return toBackend(updated)
 }
 
 func (r *PostgresRegistry) Delete(ctx context.Context, name string) error {
@@ -207,7 +214,11 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-func toBackend(row db.Backend) *Backend {
+func toBackend(row db.Backend) (*Backend, error) {
+	rates, err := unmarshalRates(row.Rates)
+	if err != nil {
+		return nil, fmt.Errorf("backends: decode rates for %q: %w", row.Name, err)
+	}
 	return &Backend{
 		Name:                row.Name,
 		Endpoint:            row.Endpoint,
@@ -220,10 +231,10 @@ func toBackend(row db.Backend) *Backend {
 		RatePerSecond:       row.RatePerSecond,
 		Kind:                Kind(row.Kind),
 		ToolKind:            row.ToolKind,
-		Rates:               unmarshalRates(row.Rates),
+		Rates:               rates,
 		CreatedAt:           row.CreatedAt.Time,
 		UpdatedAt:           row.UpdatedAt.Time,
-	}
+	}, nil
 }
 
 // marshalRates encodes a rates map to the JSONB bytes the database
@@ -236,15 +247,16 @@ func marshalRates(m map[string]float64) ([]byte, error) {
 }
 
 // unmarshalRates decodes a rates JSONB column into a map. Empty bytes
-// or "{}" returns nil so callers can range over a nil map without a
-// nil-check.
-func unmarshalRates(b []byte) map[string]float64 {
+// or "{}" returns (nil, nil) so callers can range over a nil map
+// without a nil-check. Malformed bytes return an error so callers can
+// distinguish "no rates configured" from "rates corrupted on disk".
+func unmarshalRates(b []byte) (map[string]float64, error) {
 	if len(b) == 0 || string(b) == "{}" {
-		return nil
+		return nil, nil
 	}
 	var m map[string]float64
 	if err := json.Unmarshal(b, &m); err != nil {
-		return nil
+		return nil, fmt.Errorf("malformed rates JSONB: %w", err)
 	}
-	return m
+	return m, nil
 }

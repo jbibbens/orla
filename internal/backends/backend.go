@@ -60,18 +60,20 @@ type Backend struct {
 	// or "docking". Required for KindTool, unused for KindLLM.
 	ToolKind *string `json:"tool_kind,omitempty"`
 
-	// Rates is the generic per-resource pricing map for KindTool
-	// backends. Keys are resource names that tool responses report in
-	// their Usage map. Values are USD-per-unit. Examples:
+	// Rates is the per-resource pricing map for KindTool backends.
+	// Keys are resource names that tool responses report in their
+	// Usage map. Values are USD-per-unit. Examples:
 	//
 	//   {"gpu_seconds": 0.001}
 	//   {"cpu_seconds": 0.0001, "calls": 0.005}
 	//
-	// orla computes cost as the dot product of usage and rates. If a
+	// Orla computes cost as the dot product of usage and rates. If a
 	// tool reports Usage for a key not present in Rates, that key
-	// contributes zero. KindLLM backends may also populate Rates if
-	// the LLM has unusual pricing dimensions, though the standard
-	// token rates suffice for most cases.
+	// contributes zero and a warning is logged.
+	//
+	// Rates is only valid for KindTool. LLM backends price through
+	// InputCostPerMtoken and OutputCostPerMtoken and the API rejects
+	// registration of a KindLLM backend that supplies Rates.
 	Rates map[string]float64 `json:"rates,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
@@ -82,12 +84,17 @@ type Backend struct {
 // corresponding field unchanged. Name, Kind, ModelID, and ToolKind
 // cannot be patched. To change them, delete and re-create the backend.
 type PatchRequest struct {
-	Endpoint            *string            `json:"endpoint,omitempty"`
-	APIKeyEnvVar        *string            `json:"api_key_env_var,omitempty"`
-	MaxConcurrency      *int32             `json:"max_concurrency,omitempty"`
-	InputCostPerMtoken  *float64           `json:"input_cost_per_mtoken,omitempty"`
-	OutputCostPerMtoken *float64           `json:"output_cost_per_mtoken,omitempty"`
-	Quality             *float64           `json:"quality,omitempty"`
-	RatePerSecond       *float64           `json:"rate_per_second,omitempty"`
-	Rates               map[string]float64 `json:"rates,omitempty"`
+	Endpoint            *string             `json:"endpoint,omitempty"`
+	APIKeyEnvVar        *string             `json:"api_key_env_var,omitempty"`
+	MaxConcurrency      *int32              `json:"max_concurrency,omitempty"`
+	InputCostPerMtoken  *float64            `json:"input_cost_per_mtoken,omitempty"`
+	OutputCostPerMtoken *float64            `json:"output_cost_per_mtoken,omitempty"`
+	Quality             *float64            `json:"quality,omitempty"`
+	RatePerSecond       *float64            `json:"rate_per_second,omitempty"`
+
+	// Rates uses a pointer so the patch can distinguish three cases:
+	// an absent field (no change), JSON null or pointer to nil (clear),
+	// and a pointer to a populated map (overwrite). Bare maps cannot
+	// represent the null-vs-absent split.
+	Rates *map[string]float64 `json:"rates,omitempty"`
 }

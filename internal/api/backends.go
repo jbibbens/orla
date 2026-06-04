@@ -2,6 +2,8 @@ package api
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -96,6 +98,18 @@ func (h *backendHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "rate_per_second must be >= 0")
 		return
 	}
+	if req.InputCostPerMtoken != nil && !isFiniteNonNegative(*req.InputCostPerMtoken) {
+		writeErrorMsg(w, http.StatusBadRequest, "input_cost_per_mtoken must be a non-negative finite number")
+		return
+	}
+	if req.OutputCostPerMtoken != nil && !isFiniteNonNegative(*req.OutputCostPerMtoken) {
+		writeErrorMsg(w, http.StatusBadRequest, "output_cost_per_mtoken must be a non-negative finite number")
+		return
+	}
+	if msg := validateRates(req.Rates); msg != "" {
+		writeErrorMsg(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	kind := backends.Kind(req.Kind)
 	if kind == "" {
@@ -105,6 +119,11 @@ func (h *backendHandler) create(w http.ResponseWriter, r *http.Request) {
 	case backends.KindLLM:
 		if req.ModelID == "" {
 			writeErrorMsg(w, http.StatusBadRequest, "model_id is required for kind=llm")
+			return
+		}
+		if len(req.Rates) > 0 {
+			writeErrorMsg(w, http.StatusBadRequest,
+				"rates is only valid for kind=tool; LLM backends use input_cost_per_mtoken and output_cost_per_mtoken")
 			return
 		}
 	case backends.KindTool:
@@ -184,6 +203,24 @@ func (h *backendHandler) patch(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "max_concurrency must be >= 1")
 		return
 	}
+	if req.RatePerSecond != nil && *req.RatePerSecond < 0 {
+		writeErrorMsg(w, http.StatusBadRequest, "rate_per_second must be >= 0")
+		return
+	}
+	if req.InputCostPerMtoken != nil && !isFiniteNonNegative(*req.InputCostPerMtoken) {
+		writeErrorMsg(w, http.StatusBadRequest, "input_cost_per_mtoken must be a non-negative finite number")
+		return
+	}
+	if req.OutputCostPerMtoken != nil && !isFiniteNonNegative(*req.OutputCostPerMtoken) {
+		writeErrorMsg(w, http.StatusBadRequest, "output_cost_per_mtoken must be a non-negative finite number")
+		return
+	}
+	if req.Rates != nil {
+		if msg := validateRates(*req.Rates); msg != "" {
+			writeErrorMsg(w, http.StatusBadRequest, msg)
+			return
+		}
+	}
 	b, err := h.deps.Registry.Patch(r.Context(), name, req)
 	if err != nil {
 		if errors.Is(err, backends.ErrNotFound) {
@@ -215,4 +252,22 @@ func (h *backendHandler) delete(w http.ResponseWriter, r *http.Request) {
 		h.deps.Lifecycle.Deregister(name)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// isFiniteNonNegative reports whether v is a finite non-negative
+// number. NaN, +Inf, -Inf, and negative values fail.
+func isFiniteNonNegative(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0
+}
+
+// validateRates checks that every value in the rates map is a
+// non-negative finite number. Returns an empty string on success and
+// a human-readable error message otherwise.
+func validateRates(m map[string]float64) string {
+	for k, v := range m {
+		if !isFiniteNonNegative(v) {
+			return fmt.Sprintf("rates[%q] must be a non-negative finite number, got %v", k, v)
+		}
+	}
+	return ""
 }

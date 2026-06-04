@@ -108,6 +108,9 @@ func (r *FakeRegistry) Patch(_ context.Context, name string, p PatchRequest) (*B
 		v := *p.RatePerSecond
 		updated.RatePerSecond = &v
 	}
+	if p.Rates != nil {
+		updated.Rates = cloneRates(*p.Rates)
+	}
 	updated.UpdatedAt = r.now()
 	r.backends[name] = &updated
 	return cloneBackend(&updated), nil
@@ -141,5 +144,19 @@ func cloneBackend(b *Backend) *Backend {
 		v := *b.RatePerSecond
 		out.RatePerSecond = &v
 	}
+	out.Rates = cloneRates(b.Rates)
 	return &out
+}
+
+// cloneRates returns a deep copy of the rates map. Returns nil for a
+// nil input so the caller's nil-ness is preserved.
+func cloneRates(m map[string]float64) map[string]float64 {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]float64, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }

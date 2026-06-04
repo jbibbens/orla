@@ -153,6 +153,78 @@ func TestBackendHandlers_DeleteReturns204(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, rr.Code)
 }
 
+func TestBackendHandlers_CreateRejectsRatesOnLLM(t *testing.T) {
+	srv, _ := newBackendTestServer(t)
+	body := mustJSON(t, map[string]any{
+		"name": "gpt4o", "endpoint": "https://api.openai.com/v1",
+		"model_id": "openai:gpt-4o", "max_concurrency": 1,
+		"rates": map[string]float64{"gpu_seconds": 0.001},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/backends", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "rates is only valid for kind=tool")
+}
+
+func TestBackendHandlers_CreateRejectsNegativeRate(t *testing.T) {
+	srv, _ := newBackendTestServer(t)
+	body := mustJSON(t, map[string]any{
+		"name": "boltz", "endpoint": "http://boltz.local", "kind": "tool",
+		"tool_kind": "structure-prediction", "max_concurrency": 1,
+		"rates": map[string]float64{"gpu_seconds": -1.0},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/backends", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "non-negative finite")
+}
+
+func TestBackendHandlers_PatchRatesUpdatesFakeRegistry(t *testing.T) {
+	srv, reg := newBackendTestServer(t)
+	toolKind := "structure-prediction"
+	_, err := reg.Insert(context.Background(), &backends.Backend{
+		Name: "boltz", Endpoint: "http://boltz.local", MaxConcurrency: 1,
+		Kind: backends.KindTool, ToolKind: &toolKind,
+		Rates: map[string]float64{"gpu_seconds": 0.001},
+	})
+	require.NoError(t, err)
+
+	newRates := map[string]float64{"gpu_seconds": 0.002}
+	body := mustJSON(t, map[string]any{"rates": newRates})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/backends/boltz", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	got, err := reg.Get(context.Background(), "boltz")
+	require.NoError(t, err)
+	assert.InDelta(t, 0.002, got.Rates["gpu_seconds"], 1e-12)
+}
+
+func TestFakeRegistry_GetReturnsIndependentRatesCopy(t *testing.T) {
+	reg := backends.NewFakeRegistry()
+	toolKind := "structure-prediction"
+	_, err := reg.Insert(context.Background(), &backends.Backend{
+		Name: "boltz", Endpoint: "x", MaxConcurrency: 1,
+		Kind: backends.KindTool, ToolKind: &toolKind,
+		Rates: map[string]float64{"gpu_seconds": 0.001},
+	})
+	require.NoError(t, err)
+	first, err := reg.Get(context.Background(), "boltz")
+	require.NoError(t, err)
+	first.Rates["gpu_seconds"] = 999.0 // poison the returned map
+
+	second, err := reg.Get(context.Background(), "boltz")
+	require.NoError(t, err)
+	assert.InDelta(t, 0.001, second.Rates["gpu_seconds"], 1e-12,
+		"a caller's mutation must not leak into the registry's stored map")
+}
+
 func TestBackendHandlers_ListOrderedByName(t *testing.T) {
 	srv, reg := newBackendTestServer(t)
 	for _, n := range []string{"zeta", "alpha", "mu"} {
