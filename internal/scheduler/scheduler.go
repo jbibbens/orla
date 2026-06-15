@@ -17,8 +17,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/openai/openai-go"
 	"golang.org/x/time/rate"
@@ -158,12 +160,53 @@ func (s *Scheduler) AcquireTool(ctx context.Context, name string) (provider.Tool
 // LLM requests. Tool dispatches go through AcquireTool + Invoke
 // directly from the proxy handler.
 func (s *Scheduler) Dispatch(ctx context.Context, name string, params openai.ChatCompletionNewParams) (*openai.ChatCompletion, error) {
-	p, release, err := s.AcquireLLM(ctx, name)
+	s.mu.RLock()
+	exec, ok := s.executors[name]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, ErrUnknownBackend
+	}
+	p, release, err := exec.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
+	llm, ok := p.(provider.LLMProvider)
+	if !ok {
+		release()
+		return nil, ErrWrongKind
+	}
 	defer release()
-	return p.Chat(ctx, params)
+	resp, chatErr := llm.Chat(ctx, params)
+	exec.recordOutcome(chatErr)
+	return resp, chatErr
+}
+
+
+// CircuitState returns "closed", "open", or "half-open" for the named
+// backend. Returns "closed" if the backend is not registered.
+func (s *Scheduler) CircuitState(name string) string {
+	s.mu.RLock()
+	exec, ok := s.executors[name]
+	s.mu.RUnlock()
+	if !ok {
+		return "closed"
+	}
+	return circuitStateOf(exec)
+}
+
+// circuitStateOf reads the circuit breaker state of an executor without
+// acquiring the scheduler lock. The caller must ensure exec is not nil.
+func circuitStateOf(e *executor) string {
+	e.cb.mu.Lock()
+	defer e.cb.mu.Unlock()
+	switch e.cb.state {
+	case cbOpen:
+		return "open"
+	case cbHalfOpen:
+		return "half-open"
+	default:
+		return "closed"
+	}
 }
 
 // Shutdown closes every executor. ctx bounds how long Shutdown is
@@ -192,14 +235,15 @@ func (s *Scheduler) Shutdown(ctx context.Context) error {
 	}
 }
 
-// Stats is a point-in-time view of an executor's queue and in-flight
-// counters. Used for /metrics and test inspection.
+// Stats is a point-in-time view of an executor's queue, in-flight
+// counters, and circuit breaker state. Used for /metrics and test inspection.
 type Stats struct {
-	Backend    string
-	QueueDepth int64
-	InFlight   int64
-	Capacity   int
-	Dispatched int64
+	Backend      string
+	QueueDepth   int64
+	InFlight     int64
+	Capacity     int
+	Dispatched   int64
+	CircuitState string
 }
 
 // BackendOf returns the backend record the scheduler was registered
@@ -223,11 +267,12 @@ func (s *Scheduler) Stats() []Stats {
 	out := make([]Stats, 0, len(s.executors))
 	for name, e := range s.executors {
 		out = append(out, Stats{
-			Backend:    name,
-			QueueDepth: e.queueDepth.Load(),
-			InFlight:   e.inflight.Load(),
-			Capacity:   cap(e.slots),
-			Dispatched: e.dispatched.Load(),
+			Backend:      name,
+			QueueDepth:   e.queueDepth.Load(),
+			InFlight:     e.inflight.Load(),
+			Capacity:     cap(e.slots),
+			Dispatched:   e.dispatched.Load(),
+			CircuitState: circuitStateOf(e),
 		})
 	}
 	return out
@@ -241,6 +286,7 @@ type executor struct {
 	provider provider.Backend
 	slots    chan struct{}
 	limiter  *rate.Limiter // nil when no rate limit configured
+	cb       *circuitBreaker
 
 	queueDepth atomic.Int64
 	inflight   atomic.Int64
@@ -264,6 +310,7 @@ func newExecutor(b *backends.Backend, p provider.Backend) *executor {
 		provider: p,
 		slots:    make(chan struct{}, capacity),
 		limiter:  limiter,
+		cb:       newCircuitBreaker(5, 60*time.Second),
 		closeCh:  make(chan struct{}),
 	}
 }
@@ -271,6 +318,10 @@ func newExecutor(b *backends.Backend, p provider.Backend) *executor {
 func (e *executor) acquire(ctx context.Context) (provider.Backend, ReleaseFunc, error) {
 	if e.closed.Load() {
 		return nil, nil, ErrUnknownBackend
+	}
+	// Check if circuitBreaker allows new requests, else return error
+	if !e.cb.allow() {
+		return nil, nil, &CircuitOpenError{Backend: e.backend.Name}
 	}
 	// Rate limit before taking a slot so a stalled limiter doesn't
 	// hold a worker. queueDepth is incremented after the limit fires so
@@ -303,6 +354,32 @@ func (e *executor) acquire(ctx context.Context) (provider.Backend, ReleaseFunc, 
 	case <-ctx.Done():
 		e.queueDepth.Add(-1)
 		return nil, nil, ctx.Err()
+	}
+}
+
+// isBackendError reports whether err counts as a backend failure for
+// circuit-breaker purposes. 5xx, 429, and connection-level errors count.
+// Client errors (other 4xx) and context cancellations do not.
+func isBackendError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
+		return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
+	}
+	return true
+}
+
+func (e *executor) recordOutcome(err error) {
+	if err == nil {
+		e.cb.recordSuccess()
+		return
+	}
+	if isBackendError(err) {
+		e.cb.recordFailure()
 	}
 }
 
