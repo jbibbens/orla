@@ -210,6 +210,12 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 		return
 	}
 
+	modelJSON, err := json.Marshal(backendName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("encode model name: %w", err))
+		return
+	}
+
 	start := time.Now()
 	var completionID string
 	var promptTokens, completionTokens int
@@ -236,11 +242,7 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 		if chunk.Usage.CompletionTokens > 0 {
 			completionTokens = int(chunk.Usage.CompletionTokens)
 		}
-		chunk.Model = backendName
-		data, err := json.Marshal(chunk)
-		if err != nil {
-			return
-		}
+		data := rechunkWithModel(chunk.RawJSON(), modelJSON)
 		if _, werr := fmt.Fprintf(w, "data: %s\n\n", data); werr != nil {
 			return
 		}
@@ -299,6 +301,23 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 		costUSD:          costUSD,
 	})
 	h.emitMetrics(rc.Stage, backendName, "success", latencyMs)
+}
+
+// rechunkWithModel returns the upstream chunk JSON with its model field
+// replaced by modelJSON and every other field forwarded unchanged.
+// Re-encoding the decoded openai-go struct would emit zero-value fields
+// such as an empty delta.role that strict OpenAI clients reject.
+func rechunkWithModel(raw string, modelJSON json.RawMessage) string {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return raw
+	}
+	m["model"] = modelJSON
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return string(out)
 }
 
 // computeLLMCost rolls token counts and the backend's per-million-

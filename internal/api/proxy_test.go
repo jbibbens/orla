@@ -489,5 +489,7 @@ func TestProxy_StreamingSmoke(t *testing.T) {
 		var chunk openai.ChatCompletionChunk
 		require.NoError(t, json.Unmarshal([]byte(c), &chunk))
 		assert.Equal(t, "real", chunk.Model, "chunk.model rewritten to backend name")
+		assert.NotContains(t, c, `"role":""`,
+			"must forward the upstream chunk verbatim, not emit zero-value fields strict clients reject")
 	}
 }
