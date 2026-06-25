@@ -11,12 +11,11 @@
 
 > **Migration note.** The [Orla project website](https://orlaserver.github.io/) currently documents Orla v1. We are updating it incrementally for v2. Until that work lands, the `docs/` directory in this repository is the source of truth for v2.
 
-Orla is a library for building and running LLM-based agentic systems. Modern agentic applications are workflows that combine multiple LLM calls, tool invocations, and heterogeneous infrastructure. Today, developers often stitch these pieces together manually using orchestration code, LLM serving engines, and tool execution logic.
+Orla is a runtime-adaptive execution layer for agentic workflows. Modern agentic applications combine many LLM calls, tool invocations, and heterogeneous backends, and developers usually wire these together by hand.
 
-Orla simplifies this process by separating workflow-level decisions from request execution. Developers define workflows as stages, while Orla handles how those stages are mapped to models and backends, scheduled and executed, and coordinated through shared inference state.
+You point your agent at Orla as an OpenAI-compatible endpoint and tag each call with a stage, what the call is for rather than where to send it. Orla serves the call through the stage's current policy, records what happened, and lets an external optimizer update that policy as it learns. This loop tunes each stage's policy for cost and accuracy from production data, with no changes to your agent's code.
 
-
-The system exposes three core components: a Stage Mapper for heterogeneous model routing, a Workflow Orchestrator for executing and scheduling stages, and a Memory Manager that manages KV cache across workflow stages.
+Three components participate. The agent issues stage-tagged calls and rates each result. Orla, the execution layer in the middle, applies each stage's policy to incoming calls and holds the shared record. The optimizer reads that record and revises a stage's policy whenever the data points to a better one, from a simple backend swap to a cheap-first rule that escalates to a stronger model only when a task fails.
 
 <p align="center">
   <a href="https://seas.harvard.edu/"><img src="share/harvard_university_logo.svg" alt="Harvard University" width="360"></a>
