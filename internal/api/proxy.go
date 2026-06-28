@@ -105,6 +105,10 @@ func (h *proxyHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "messages is required and must not be empty")
 		return
 	}
+	if err := reattachJSONSchema(&params, body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 
 	rc := extractRequestContext(r, params.Metadata)
 	if rc.Stage == "" {
@@ -140,6 +144,35 @@ func (h *proxyHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.serveNonStreaming(w, r, rc, backendName, params)
+}
+
+// reattachJSONSchema restores a json_schema response format onto params.
+// The SDK param union keeps the format type when it unmarshals the
+// request body but drops the nested schema, so a structured-output
+// request would otherwise reach the backend without its schema.
+// Rebuilding the concrete param from the raw body preserves it.
+func reattachJSONSchema(params *openai.ChatCompletionNewParams, body []byte) error {
+	var raw struct {
+		ResponseFormat json.RawMessage `json:"response_format"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil || len(raw.ResponseFormat) == 0 {
+		return nil
+	}
+	var head struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw.ResponseFormat, &head); err != nil {
+		return fmt.Errorf("decode response_format type: %w", err)
+	}
+	if head.Type != "json_schema" {
+		return nil
+	}
+	var js shared.ResponseFormatJSONSchemaParam
+	if err := json.Unmarshal(raw.ResponseFormat, &js); err != nil {
+		return fmt.Errorf("decode response_format json_schema: %w", err)
+	}
+	params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{OfJSONSchema: &js}
+	return nil
 }
 
 func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request, rc *requestContext, backendName string, params openai.ChatCompletionNewParams) {
