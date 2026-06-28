@@ -65,7 +65,7 @@ def post_feedback(completion_id: str, stage: str, rating: float) -> None:
 
 def main() -> None:
     n = int(os.environ.get("N", "10"))
-    ds = load_dataset("hotpot_qa", "distractor", split=f"validation[:{n}]", trust_remote_code=True)
+    ds = load_dataset("hotpotqa/hotpot_qa", "distractor", split=f"validation[:{n}]")
     agent = HotpotAgent()
 
     total, em = 0.0, 0
