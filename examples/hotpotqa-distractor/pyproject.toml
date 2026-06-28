@@ -1,0 +1,23 @@
+[project]
+name = "orla-example-hotpotqa-distractor"
+version = "0.1.0"
+description = "Multi-hop QA on HotpotQA (distractor) as a fixed Orla pipeline."
+requires-python = ">=3.10"
+dependencies = [
+    "openai==2.44.0",
+    "datasets==5.0.0",
+    "pydantic==2.13.4",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.15.20",
+    "ty==0.0.55",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
