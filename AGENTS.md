@@ -463,6 +463,13 @@ stack.
 
 ### Use the standard library
 
+Prefer something already built, the standard library or a vetted
+dependency, over code you write yourself. A mature package or a
+stdlib helper is almost always more correct and better tested than a
+version written under deadline. A good dependency is welcome. What is
+not welcome is hand-rolling logic that an existing library already
+solves. Reinvent only when nothing fits.
+
 Go 1.26's standard library covers most of the helpers a new contributor
 would otherwise hand-roll. Reach for these before writing your own:
 
@@ -488,6 +495,125 @@ Already-imported deps to use rather than re-implementing:
 - `golang.org/x/time/rate` for token-bucket rate limiting.
 - `github.com/jackc/pgx/v5` types for nullable database columns
   (`pgtype.Text`, `pgtype.Timestamptz`).
+
+## Python style
+
+The daemon is Go. Python appears only under `examples/`, where each
+example is a small runnable agent that drives Orla over its
+OpenAI-compatible endpoint. These rules keep those examples
+consistent with each other and with the Go side. They lean on the
+same instincts: type everything, fail loudly, prefer the standard
+library, and let the tooling enforce the rest.
+
+### Tooling
+
+The toolchain is Astral's, and it is not optional.
+
+- **uv** for environments and dependencies. Not pip, not poetry, not
+  a bare `requirements.txt`. Use `uv add` to add a dependency,
+  `uv lock` to resolve, `uv run` to execute inside the project
+  environment.
+- **ruff** for both linting and formatting. It replaces black,
+  isort, and flake8. There is one formatter and one linter, and they
+  are the same tool.
+- **ty** for type checking. It is Astral's checker and still young,
+  so expect rough edges, but it is the house checker. Do not reach
+  for mypy or pyright instead.
+- **just** for task running, the same as the Go side. Every example
+  ships a `justfile` with the same recipe names so muscle memory
+  carries across examples: `run`, `fmt`, `lint`, `typecheck`, and a
+  `check` that runs the read-only trio the way CI would.
+
+### Project layout and dependencies
+
+Each example is a self-contained uv project under
+`examples/<name>/` with its own `pyproject.toml` and `uv.lock`.
+
+- Runtime dependencies go in `[project].dependencies`. Development
+  tools like ruff and ty go in `[dependency-groups].dev` per
+  PEP 735. `uv run` installs the dev group by default, so a
+  contributor gets the linters without a second command.
+- Pin exact versions with `==` and commit `uv.lock`. An example is a
+  thing you run, not a library someone imports, so reproducibility
+  beats flexibility. A library would use floors with `>=` instead.
+- The lockfile is committed and never hand-edited. uv owns it.
+  `.gitignore` covers `.venv/`, `__pycache__/`, `.ruff_cache/`, and
+  `.ty_cache/`.
+
+### Types
+
+Type every function signature, both parameters and return. `ty check`
+runs in `just check` and in CI, so an untyped surface is a failing
+build.
+
+- Put `from __future__ import annotations` at the top of every
+  module. Annotations become lazy strings, and a 3.10 target can
+  write `X | None` and `list[int]` without importing from `typing`.
+- Use the built-in generics, `list[int]` and `dict[str, T]`, not
+  `typing.List`. Use `X | None`, not `Optional[X]`.
+- Reach for a `TypeVar` when a function's return type depends on a
+  type handed in. `_ask(..., schema: type[T]) -> T | None` in the
+  HotpotQA example returns the exact model it was asked for. A
+  function that returns the base type instead forces every caller to
+  narrow it back.
+- Model structured data that crosses a boundary with a Pydantic
+  model or a dataclass. Do not pass bare dicts whose shape lives
+  only in your head. This is the Python form of the Go rule about
+  field-named struct literals.
+
+### Naming
+
+- `snake_case` for functions and variables, `PascalCase` for
+  classes, `UPPER_SNAKE` for module constants. A single leading
+  underscore marks a name module-private.
+- Do not uppercase acronyms the way Go does. PEP 8 wins here.
+  `HTTPClient` as a class is fine, but `url` and `id` stay
+  lowercase.
+
+### Errors
+
+- Raise exceptions. Do not return a sentinel value to signal
+  failure. A function that returns `None` or `""` or `-1` to mean
+  "it did not work" forces every caller to remember the rule, the
+  same failure mode the Go side bans.
+- Catch narrowly. A broad `except Exception` belongs only at a
+  top-level boundary where you log and carry on, the way the
+  feedback post in the example swallows a network error so one bad
+  call does not abort the run. A bare `except:` is never correct.
+- Let an exception propagate to the layer that can act on it. Do not
+  wrap and re-raise just to attach a string the traceback already
+  carries. When you do re-raise with new context, use
+  `raise ... from err` so the cause survives.
+
+### Comments and prose
+
+The "Writing prose" and "Writing comments" rules apply to Python as
+well. No em-dashes, no semicolons, default to no comment, and comment
+only the non-obvious why.
+
+- Open each module with a one-paragraph docstring. The run scripts
+  put the invocation and the environment variables there so the file
+  is its own usage message.
+- A class or function docstring earns its place only when the
+  contract is non-obvious. The bar is the same as a Go doc comment.
+
+### Don't reinvent the wheel
+
+Prefer something already built, the standard library or a
+well-maintained dependency, over code you write yourself. A vetted
+package or a stdlib helper is almost always more correct and better
+tested than a version written under deadline. A good external
+dependency is welcome. What is not welcome is hand-rolling logic that
+a mature library already solves. Reach for your own implementation
+only when nothing fits, or when the dependency would weigh far more
+than the problem it solves.
+
+### Talking to Orla
+
+Orla speaks the OpenAI wire protocol, so an example talks to it with
+the plain `openai` client. Point `base_url` at Orla, tag every call
+with the `X-Orla-Stage` header, and keep the returned completion id
+so the script can post feedback against it.
 
 ## Database and storage
 
