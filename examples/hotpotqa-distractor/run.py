@@ -15,9 +15,11 @@ import json
 import os
 import re
 import string
+import sys
 import urllib.request
 
 from datasets import load_dataset
+from pydantic import ValidationError
 
 from agent import HotpotAgent
 
@@ -71,7 +73,19 @@ def main() -> None:
     total, em = 0.0, 0
     for ex in ds:
         paragraphs = list(zip(ex["context"]["title"], ex["context"]["sentences"], strict=True))
-        pred, calls = agent.answer(ex["question"], paragraphs)
+        try:
+            pred, calls = agent.answer(ex["question"], paragraphs)
+        except ValidationError:
+            print(
+                "\na backend returned text instead of JSON, so it is not honoring the "
+                "response_format schema.\n"
+                "  - update and restart the Orla daemon. an older daemon drops "
+                "response_format before it reaches the backend.\n"
+                "  - confirm the mapped backend supports structured outputs "
+                "(orlactl stage get select).",
+                file=sys.stderr,
+            )
+            raise SystemExit(1) from None
         score = f1(pred, ex["answer"])
         total += score
         em += int(normalize(pred) == normalize(ex["answer"]))
