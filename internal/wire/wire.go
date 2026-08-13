@@ -18,9 +18,11 @@ type CreateBackendRequest struct {
 	Quality        *float64 `json:"quality"`
 	RatePerSecond  *float64 `json:"rate_per_second"`
 
-	ModelID             string   `json:"model_id,omitempty"`
-	InputCostPerMtoken  *float64 `json:"input_cost_per_mtoken,omitempty"`
-	OutputCostPerMtoken *float64 `json:"output_cost_per_mtoken,omitempty"`
+	ModelID                string   `json:"model_id,omitempty"`
+	InputCostPerMtoken     *float64 `json:"input_cost_per_mtoken,omitempty"`
+	OutputCostPerMtoken    *float64 `json:"output_cost_per_mtoken,omitempty"`
+	CacheReadCostPerMtoken *float64 `json:"cache_read_cost_per_mtoken,omitempty"`
+	CostSource             string   `json:"cost_source,omitempty"`
 
 	ToolKind string             `json:"tool_kind,omitempty"`
 	Rates    map[string]float64 `json:"rates,omitempty"`
@@ -30,34 +32,36 @@ type CreateBackendRequest struct {
 // fields are left unchanged. Name, kind, model id, and tool kind cannot
 // be patched.
 type PatchBackendRequest struct {
-	Endpoint            *string             `json:"endpoint,omitempty"`
-	APIKeyEnvVar        *string             `json:"api_key_env_var,omitempty"`
-	MaxConcurrency      *int32              `json:"max_concurrency,omitempty"`
-	InputCostPerMtoken  *float64            `json:"input_cost_per_mtoken,omitempty"`
-	OutputCostPerMtoken *float64            `json:"output_cost_per_mtoken,omitempty"`
-	Quality             *float64            `json:"quality,omitempty"`
-	RatePerSecond       *float64            `json:"rate_per_second,omitempty"`
-	Rates               *map[string]float64 `json:"rates,omitempty"`
+	Endpoint               *string             `json:"endpoint,omitempty"`
+	APIKeyEnvVar           *string             `json:"api_key_env_var,omitempty"`
+	MaxConcurrency         *int32              `json:"max_concurrency,omitempty"`
+	InputCostPerMtoken     *float64            `json:"input_cost_per_mtoken,omitempty"`
+	OutputCostPerMtoken    *float64            `json:"output_cost_per_mtoken,omitempty"`
+	CacheReadCostPerMtoken *float64            `json:"cache_read_cost_per_mtoken,omitempty"`
+	Quality                *float64            `json:"quality,omitempty"`
+	RatePerSecond          *float64            `json:"rate_per_second,omitempty"`
+	Rates                  *map[string]float64 `json:"rates,omitempty"`
 }
 
 // Backend is the JSON the API returns for a backend. CircuitBreaker is
 // live scheduler state, present on reads and empty otherwise.
 type Backend struct {
-	Name                string             `json:"name"`
-	Endpoint            string             `json:"endpoint"`
-	APIKeyEnvVar        string             `json:"api_key_env_var"`
-	MaxConcurrency      int32              `json:"max_concurrency"`
-	Quality             *float64           `json:"quality,omitempty"`
-	RatePerSecond       *float64           `json:"rate_per_second,omitempty"`
-	Kind                string             `json:"kind"`
-	ModelID             *string            `json:"model_id,omitempty"`
-	InputCostPerMtoken  *float64           `json:"input_cost_per_mtoken,omitempty"`
-	OutputCostPerMtoken *float64           `json:"output_cost_per_mtoken,omitempty"`
-	ToolKind            *string            `json:"tool_kind,omitempty"`
-	Rates               map[string]float64 `json:"rates,omitempty"`
-	CircuitBreaker      string             `json:"circuit_breaker,omitempty"`
-	CreatedAt           time.Time          `json:"created_at"`
-	UpdatedAt           time.Time          `json:"updated_at"`
+	Name                   string             `json:"name"`
+	Endpoint               string             `json:"endpoint"`
+	APIKeyEnvVar           string             `json:"api_key_env_var"`
+	MaxConcurrency         int32              `json:"max_concurrency"`
+	Quality                *float64           `json:"quality,omitempty"`
+	RatePerSecond          *float64           `json:"rate_per_second,omitempty"`
+	Kind                   string             `json:"kind"`
+	ModelID                *string            `json:"model_id,omitempty"`
+	InputCostPerMtoken     *float64           `json:"input_cost_per_mtoken,omitempty"`
+	OutputCostPerMtoken    *float64           `json:"output_cost_per_mtoken,omitempty"`
+	CacheReadCostPerMtoken *float64           `json:"cache_read_cost_per_mtoken,omitempty"`
+	ToolKind               *string            `json:"tool_kind,omitempty"`
+	Rates                  map[string]float64 `json:"rates,omitempty"`
+	CircuitBreaker         string             `json:"circuit_breaker,omitempty"`
+	CreatedAt              time.Time          `json:"created_at"`
+	UpdatedAt              time.Time          `json:"updated_at"`
 }
 
 // MapStageRequest is the PUT /api/v1/stages/{id} body. The PUT replaces
@@ -114,6 +118,23 @@ type Stage struct {
 // scheduling decision. Enabled is derived on responses and ignored on
 // input.
 type SchedulerPolicy struct {
+	URL       string `json:"url"`
+	TimeoutMS int    `json:"timeout_ms"`
+	Enabled   bool   `json:"enabled"`
+}
+
+// CostPolicy is the GET and PUT /api/v1/costs/policy body.
+// RefreshIntervalMS is how often the daemon refreshes prices from
+// backend cost sources.
+type CostPolicy struct {
+	RefreshIntervalMS int `json:"refresh_interval_ms"`
+}
+
+// StageMapper is the GET and PUT /api/v1/stage-mapper body. An
+// empty URL means stages route by their static mapping. TimeoutMS
+// bounds a single routing decision. Enabled is derived on responses
+// and ignored on input.
+type StageMapper struct {
 	URL       string `json:"url"`
 	TimeoutMS int    `json:"timeout_ms"`
 	Enabled   bool   `json:"enabled"`

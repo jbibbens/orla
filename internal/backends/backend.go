@@ -56,6 +56,12 @@ type Backend struct {
 	InputCostPerMtoken  *float64 `json:"input_cost_per_mtoken,omitempty"`
 	OutputCostPerMtoken *float64 `json:"output_cost_per_mtoken,omitempty"`
 
+	// CacheReadCostPerMtoken prices a prompt token the provider served
+	// from its cache, which providers report as a subset of the prompt
+	// tokens. NULL prices a cached token at InputCostPerMtoken. Only
+	// valid for KindLLM.
+	CacheReadCostPerMtoken *float64 `json:"cache_read_cost_per_mtoken,omitempty"`
+
 	// ToolKind identifies the family of tool, such as "structure-prediction"
 	// or "docking". Required for KindTool, unused for KindLLM.
 	ToolKind *string `json:"tool_kind,omitempty"`
@@ -76,6 +82,12 @@ type Backend struct {
 	// registration of a KindLLM backend that supplies Rates.
 	Rates map[string]float64 `json:"rates,omitempty"`
 
+	// CostSource is an optional URL the daemon polls for the backend's
+	// current per-million-token costs. While a fetched price is live it
+	// overrides InputCostPerMtoken and OutputCostPerMtoken for cost
+	// accounting. Only valid for KindLLM.
+	CostSource *string `json:"cost_source,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -84,17 +96,23 @@ type Backend struct {
 // corresponding field unchanged. Name, Kind, ModelID, and ToolKind
 // cannot be patched. To change them, delete and re-create the backend.
 type PatchRequest struct {
-	Endpoint            *string             `json:"endpoint,omitempty"`
-	APIKeyEnvVar        *string             `json:"api_key_env_var,omitempty"`
-	MaxConcurrency      *int32              `json:"max_concurrency,omitempty"`
-	InputCostPerMtoken  *float64            `json:"input_cost_per_mtoken,omitempty"`
-	OutputCostPerMtoken *float64            `json:"output_cost_per_mtoken,omitempty"`
-	Quality             *float64            `json:"quality,omitempty"`
-	RatePerSecond       *float64            `json:"rate_per_second,omitempty"`
+	Endpoint               *string  `json:"endpoint,omitempty"`
+	APIKeyEnvVar           *string  `json:"api_key_env_var,omitempty"`
+	MaxConcurrency         *int32   `json:"max_concurrency,omitempty"`
+	InputCostPerMtoken     *float64 `json:"input_cost_per_mtoken,omitempty"`
+	OutputCostPerMtoken    *float64 `json:"output_cost_per_mtoken,omitempty"`
+	CacheReadCostPerMtoken *float64 `json:"cache_read_cost_per_mtoken,omitempty"`
+	Quality                *float64 `json:"quality,omitempty"`
+	RatePerSecond          *float64 `json:"rate_per_second,omitempty"`
 
 	// Rates uses a pointer so the patch can distinguish three cases:
 	// an absent field (no change), JSON null or pointer to nil (clear),
 	// and a pointer to a populated map (overwrite). Bare maps cannot
 	// represent the null-vs-absent split.
 	Rates *map[string]float64 `json:"rates,omitempty"`
+
+	// CostSource follows the same convention as the other pointer
+	// fields. A pointer to the empty string clears the source and
+	// returns the backend to its static costs.
+	CostSource *string `json:"cost_source,omitempty"`
 }

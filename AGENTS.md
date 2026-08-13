@@ -87,12 +87,31 @@ honored.
 - **No semicolons in prose.** Use a period and start a new sentence.
 - **No unnecessary parentheses.** Parenthetical asides that pause the
   reader for a thought you could have put in its own sentence should
-  go in its own sentence. Parens are fine for genuine clarifications
-  (e.g., abbreviations on first use) but not as a substitute for a
-  comma or period.
+  go in its own sentence. A one-word gloss such as an abbreviation on
+  first use is fine. Anything longer is a sentence you have not
+  written yet, and parens are never a substitute for a comma or a
+  period.
+- **Don't pack settings into parentheses.** A run of
+  `NAME (default X), OTHER (default Y)` is unreadable, and a second
+  clause tacked on after a semicolon makes it worse. Put environment
+  variables, flags, and their defaults in a table with a column for
+  the name, the default, and the meaning.
 - **No ASCII diagrams.** Describe relationships in prose. ASCII boxes
   and arrows are hard to maintain and rarely earn their space.
 - **No emoji** unless the user explicitly asks for them.
+- **Don't define a thing by what it is not.** "X, not Y" and its
+  variants, "X rather than Y", "X and never Y", tell the reader what
+  to erase instead of what to hold. Say what the thing does and stop.
+  "The audit is a visibility aid, not an access gate" becomes "The
+  audit records every write and lets all of them through." State a
+  limit outright when it is load-bearing, as its own sentence, in
+  terms of what happens: "Orla still serves the request."
+- **No vague back-references.** Do not open a sentence with "This",
+  "That", "These", "Those", "Their", or "It" pointing at a noun from
+  an earlier sentence. Name the noun again. "This is the wrong
+  baseline" becomes "The best region in hindsight is the wrong
+  baseline." The reader should never have to look backward to resolve
+  what a pronoun stands for.
 
 ### Soft rules
 
@@ -102,6 +121,11 @@ honored.
   stage" beats "When a request arrives, the proxy looks up the
   stage."
 - Define jargon on first use, even if you think the reader knows it.
+- Do not write in fragments or in a punchy, aphoristic style. Short
+  clipped clauses strung together read like a parable, not like
+  documentation. "No key, no cost, runs on a laptop" is wrong.
+  "Ollama runs models locally, so it needs no API key and costs
+  nothing to call" is right.
 - Don't write multi-paragraph code docstrings. One short paragraph
   per exported identifier is the ceiling.
 
@@ -140,6 +164,14 @@ The rules under "Writing prose" apply, plus:
   for a specific upstream bug, behavior that would surprise a reader.
 - **Don't describe what the code does.** The code does that.
   "Increments the counter" above `c++` is noise.
+- **Describe what the code does do, not what it avoids.** A comment
+  that lists rejected alternatives or absent behavior goes stale the
+  moment the code changes. State the behavior that exists and the
+  reason for it. Name an absence only when it is a load-bearing
+  constraint a maintainer would otherwise violate, such as a retry
+  that must not happen, and give the why. Write that absence as
+  behavior, not as a contrast. "The mapper falls back to the static
+  mapping on any error" beats "the mapper is a hint, not a gate."
 - **Don't reference the past.** "Renamed from X", "formerly Y",
   "was previously fooBar" all rot. Comments describe the present
   state. If the reader needs migration history they can `git log`.
@@ -180,6 +212,28 @@ The conventions that matter here:
 - State a type's concurrency guarantees and any useful zero value when
   they are not obvious.
 - Mark a removal with a `Deprecated:` paragraph so tooling can flag it.
+
+## Writing documentation
+
+The docs under `docs/`, the tutorials on the site, and every example
+README are read top to bottom by someone following along. The prose
+rules above apply, plus a few that matter for a page with commands in
+it.
+
+- **Explain every code block.** Never drop a command or snippet
+  without saying what it does and what every meaningful flag means.
+  Show output too, and say what its columns or fields mean.
+- **Headings name content, and are not narration.** "Dynamic stage
+  mapper" and "Cost, latency, and feedback" are good. "Now we register
+  the backends" narrates the act instead of naming the subject. "What
+  makes a workflow static" poses a question the prose should just
+  answer.
+- **Do not over-chunk.** A heading breaks the reader's flow. Add one
+  only where a genuinely new section begins. Merge two short sections
+  that are really one idea and let a sentence carry the transition.
+- **Cut filler.** Remove words that earn nothing. If "static" already
+  carries the meaning, do not also write "fixed". Do not lean on one
+  adjective across a passage.
 
 ## Writing tests
 
@@ -288,10 +342,21 @@ Rules:
 
 ## Git practices
 
+- **Never commit without asking. Never push without asking.** Both are
+  separate acts and each needs its own approval. Propose the commit,
+  name the files and the message, then wait for the user to say yes.
+  Leave the work uncommitted until they do.
+- **Approval never carries forward.** A yes for one commit is not a
+  yes for the next one, and a yes to commit is not a yes to push. Ask
+  again every time, however routine the change looks and however many
+  times the user has already agreed in the session.
+- **Approval to do work is not approval to commit it.** "Sounds good",
+  "go ahead", and "yes" in reply to a plan mean write the code. They
+  do not mean commit it, and they never mean push it. When the user
+  approves an implementation, finish it, run the quality gate, and
+  stop with a clean summary and a commit proposal.
 - Use whatever git identity the user has configured. Never pass
   `-c user.email` or `-c user.name`.
-- Don't push without explicit authorization. The user often wants to
-  review the local commit chain before it leaves the machine.
 - For PR merges, prefer `gh pr merge <num> --squash --delete-branch`.
 - Before any destructive operation (`git reset --hard`, force-push,
   `git rm -r .`, branch delete), confirm with the user. Use
@@ -299,6 +364,28 @@ Rules:
   authorized.
 
 ## Go style
+
+### Principles
+
+Follow the priorities of [Google's Go style guide](https://google.github.io/styleguide/go/):
+code should be correct first, clear second, and concise third. Never
+trade an earlier property for a later one. Judge clarity from the
+reader's seat, not the writer's.
+
+Aim for the simplest design that solves the problem. Simple sometimes
+means clever. A well-chosen invariant can delete a page of special
+cases. Simple never means convoluted. Code that a reader must
+simulate in their head before trusting it is not simple yet.
+
+When two designs are otherwise equal, pick the one with less
+mechanism. Fewer moving parts, fewer knobs, less code, and less for
+an operator to run and monitor.
+
+Avoid grab-bag packages. Names like util, common, and helpers say
+nothing about what a package contains, and both the
+[Go blog](https://go.dev/blog/package-names) and Google's style guide
+reject them. Shared code belongs in the package that owns its
+concept.
 
 ### Naming
 
@@ -487,14 +574,23 @@ That turns a config mistake into a delayed outage under load. Validate
 it at the wiring boundary or make it a genuinely optional dependency
 that no-ops when absent, the way the proxy treats its metrics sink.
 
-### Use the standard library
+### Don't reinvent the wheel
 
-Prefer something already built, the standard library or a vetted
-dependency, over code you write yourself. A mature package or a
-stdlib helper is almost always more correct and better tested than a
-version written under deadline. A good dependency is welcome. What is
-not welcome is hand-rolling logic that an existing library already
-solves. Reinvent only when nothing fits.
+Before writing any non-trivial logic, look for something already
+built. Search the standard library first, then the deps already in
+go.mod, then the wider module ecosystem. A mature package is almost
+always more correct and better tested than a version written under
+deadline, and every line not written is a line nobody has to review,
+test, or maintain. Hand-rolling what a library already solves does
+not just cost the lines, it adds a design of our own that we now own
+forever.
+
+Judge a candidate dependency by its maintenance and adoption. Recent
+releases, responsive maintainers, wide use in serious projects, and a
+focused scope are the signals that matter. Stars and download counts
+are hints, not verdicts. A good dependency is welcome. Reinvent only
+when nothing fits or the dependency would weigh far more than the
+problem it solves.
 
 Go 1.26's standard library covers most of the helpers a new contributor
 would otherwise hand-roll. Reach for these before writing your own:
@@ -559,9 +655,12 @@ Each example is a self-contained uv project under
   tools like ruff and ty go in `[dependency-groups].dev` per
   PEP 735. `uv run` installs the dev group by default, so a
   contributor gets the linters without a second command.
-- Pin exact versions with `==` and commit `uv.lock`. An example is a
-  thing you run, not a library someone imports, so reproducibility
-  beats flexibility. A library would use floors with `>=` instead.
+- Pin every direct dependency to an exact version with `==` and commit
+  `uv.lock`. The lockfile resolves the full tree with hashes, so
+  installs are both reproducible and verified against supply-chain
+  tampering. An example is a thing you run, not a library someone
+  imports, so pinning beats flexibility. A library would use floors
+  with `>=` instead.
 - The lockfile is committed and never hand-edited. uv owns it.
   `.gitignore` covers `.venv/`, `__pycache__/`, `.ruff_cache/`, and
   `.ty_cache/`.
@@ -586,6 +685,14 @@ build.
   model or a dataclass. Do not pass bare dicts whose shape lives
   only in your head. This is the Python form of the Go rule about
   field-named struct literals.
+
+### Imports
+
+Every import goes at the top of the module. A function-level import
+hides a dependency from both the reader and the tooling, and it defers
+an ImportError from startup to call time. Import inside a function
+only to break a genuine circular import or to keep an optional
+dependency optional, and name the reason in a comment.
 
 ### Naming
 
@@ -625,14 +732,20 @@ only the non-obvious why.
 
 ### Don't reinvent the wheel
 
-Prefer something already built, the standard library or a
-well-maintained dependency, over code you write yourself. A vetted
-package or a stdlib helper is almost always more correct and better
-tested than a version written under deadline. A good external
-dependency is welcome. What is not welcome is hand-rolling logic that
-a mature library already solves. Reach for your own implementation
-only when nothing fits, or when the dependency would weigh far more
-than the problem it solves.
+Before writing any non-trivial logic, look for something already
+built. Search the standard library first, then the deps already in
+`pyproject.toml`, then PyPI. A mature package is almost always more
+correct and better tested than a version written under deadline, and
+every line not written is a line nobody has to review, test, or
+maintain. Hand-rolling what a library already solves does not just
+cost the lines, it adds a design of our own that we now own forever.
+
+Judge a candidate dependency by its maintenance and adoption. Recent
+releases, responsive maintainers, wide use in serious projects, and a
+focused scope are the signals that matter. Stars and download counts
+are hints, not verdicts. A good dependency is welcome. Reinvent only
+when nothing fits or the dependency would weigh far more than the
+problem it solves.
 
 ### Talking to Orla
 
@@ -703,8 +816,17 @@ Two channels exist on backends:
 
 - LLM backends price through `input_cost_per_mtoken` and
   `output_cost_per_mtoken` (per million tokens). The proxy computes
-  `cost_usd = (prompt_tokens × input + completion_tokens × output) /
-  1_000_000` and records it on every completion.
+  `cost_usd = ((prompt_tokens - cached_tokens) × input + cached_tokens
+  × cache_read + completion_tokens × output) / 1_000_000` and records
+  it on every completion. `cached_tokens` is the share of the prompt
+  the provider served from its cache, reported as
+  `prompt_tokens_details.cached_tokens`. A backend that declares no
+  `cache_read_cost_per_mtoken` prices a cached token at the input
+  rate. An LLM backend whose
+  price changes over time can set `cost_source`, a URL the daemon
+  polls for the current per-mtoken costs. A live polled price
+  overrides the static columns for cost accounting without rewriting
+  them. See `internal/costs` and [`docs/proxy.md`](docs/proxy.md).
 - Tool backends price through the `rates` JSONB map. Each key is a
   resource name (`gpu_seconds`, `cpu_seconds`, `calls`, …) and the
   value is USD per unit. Tool wrappers report a parallel `usage` map

@@ -22,6 +22,12 @@ type Metrics struct {
 	PolicyDecisionsTotal     *prometheus.CounterVec
 	PolicyDecisionSeconds    *prometheus.HistogramVec
 	ToolCostAnomalyTotal     *prometheus.CounterVec
+	CostFetchFailuresTotal   *prometheus.CounterVec
+
+	ControlPlaneMutationsTotal *prometheus.CounterVec
+
+	StageMapperDecisionsTotal  *prometheus.CounterVec
+	StageMapperDecisionSeconds prometheus.Histogram
 }
 
 // New constructs and registers all push-style metrics on reg.
@@ -79,6 +85,14 @@ func New(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"backend"},
 		),
+		ControlPlaneMutationsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "control_plane_mutations_total",
+				Help:      "Mutating requests to the /api/v1 control plane, by resource, method, and outcome (success|error).",
+			},
+			[]string{"resource", "method", "outcome"},
+		),
 		ToolCostAnomalyTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "orla",
@@ -86,6 +100,31 @@ func New(reg prometheus.Registerer) *Metrics {
 				Help:      "Tool dispatches whose reported cost exceeded the sanity ceiling, by backend.",
 			},
 			[]string{"backend"},
+		),
+		CostFetchFailuresTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "cost_fetch_failures_total",
+				Help:      "Failed reads of a backend's cost source, by backend. A rising count means completions are priced from a stale price.",
+			},
+			[]string{"backend"},
+		),
+		StageMapperDecisionsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "stage_mapper_decisions_total",
+				Help:      "Stage mapper decisions by outcome: ok, declined, or a fallback_* reason.",
+			},
+			[]string{"outcome"},
+		),
+		StageMapperDecisionSeconds: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: "orla",
+				Name:      "stage_mapper_decision_seconds",
+				Help:      "Latency of a stage mapper decision in seconds.",
+				// 1ms .. ~1s
+				Buckets: prometheus.ExponentialBuckets(0.001, 2, 11),
+			},
 		),
 	}
 	reg.MustRegister(
@@ -95,7 +134,11 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.SchedulerRejectionsTotal,
 		m.PolicyDecisionsTotal,
 		m.PolicyDecisionSeconds,
+		m.ControlPlaneMutationsTotal,
 		m.ToolCostAnomalyTotal,
+		m.CostFetchFailuresTotal,
+		m.StageMapperDecisionsTotal,
+		m.StageMapperDecisionSeconds,
 	)
 	return m
 }
@@ -130,7 +173,27 @@ func (m *Metrics) ObservePolicyDecision(backend string, seconds float64) {
 	m.PolicyDecisionSeconds.WithLabelValues(backend).Observe(seconds)
 }
 
+// IncControlPlaneMutation is the api.ControlPlaneAuditMetrics adapter.
+func (m *Metrics) IncControlPlaneMutation(resource, method, outcome string) {
+	m.ControlPlaneMutationsTotal.WithLabelValues(resource, method, outcome).Inc()
+}
+
 // IncToolCostAnomaly is the api.ProxyMetrics adapter.
 func (m *Metrics) IncToolCostAnomaly(backend string) {
 	m.ToolCostAnomalyTotal.WithLabelValues(backend).Inc()
+}
+
+// IncCostFetchFailure is the costs.PollerMetrics adapter.
+func (m *Metrics) IncCostFetchFailure(backend string) {
+	m.CostFetchFailuresTotal.WithLabelValues(backend).Inc()
+}
+
+// IncStageMapperDecision is the api.ProxyMetrics adapter.
+func (m *Metrics) IncStageMapperDecision(outcome string) {
+	m.StageMapperDecisionsTotal.WithLabelValues(outcome).Inc()
+}
+
+// ObserveStageMapperDecision is the api.ProxyMetrics adapter.
+func (m *Metrics) ObserveStageMapperDecision(seconds float64) {
+	m.StageMapperDecisionSeconds.Observe(seconds)
 }
